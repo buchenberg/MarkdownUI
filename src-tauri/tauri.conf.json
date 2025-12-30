@@ -1,0 +1,65 @@
+{
+    "build": {
+        "beforeDevCommand": "npm run dev:frontend",
+        "beforeBuildCommand": "npm run build:frontend",
+        "devPath": "http://localhost:5173",
+        "distDir": "../dist",
+        "withGlobalTauri": false
+    },
+    "package": {
+        "productName": "MarkdownUI",
+        "version": "1.0.0"
+    },
+    "tauri": {
+        "allowlist": {
+            "all": false,
+            "shell": {
+                "all": false,
+                "open": true
+            },
+            "dialog": {
+                "all": false,
+                "save": true
+            },
+            "fs": {
+                "all": false,
+                "readFile": true,
+                "writeFile": true,
+                "readDir": true,
+                "createDir": true,
+                "removeDir": true,
+                "removeFile": true,
+                "exists": true,
+                "scope": [
+                    "$APPDATA/**",
+                    "$HOME/**",
+                    "$DOCUMENT/**",
+                    "$DESKTOP/**"
+                ]
+            },
+            "path": {
+                "all": true
+            }
+        },
+        "bundle": {
+            "active": true,
+            "targets": "all",
+            "identifier": "com.markdownui.app",
+            "icon": [
+                "icons/icon.ico"
+            ]
+        },
+        "security": {
+            "csp": null
+        },
+        "windows": [
+            {
+                "fullscreen": false,
+                "resizable": true,
+                "title": "MarkdownUI",
+                "width": 1200,
+                "height": 800
+            }
+        ]
+    }
+}
