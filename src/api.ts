@@ -115,3 +115,50 @@ export async function exportMarkdown(
         throw error;
     }
 }
+
+// Document Export API (HTML, PDF)
+export type ExportFormat = "html" | "pdf";
+
+export async function exportDocument(
+    documentId: number,
+    format: ExportFormat,
+    defaultName: string,
+): Promise<boolean> {
+    try {
+        // Map format to file extension and filter name
+        const formatInfo: Record<ExportFormat, { ext: string; name: string }> = {
+            html: { ext: "html", name: "HTML Files" },
+            pdf: { ext: "pdf", name: "PDF Files" },
+        };
+
+        const { ext, name: filterName } = formatInfo[format];
+
+        // Show save dialog
+        const filePath = await save({
+            defaultPath: `${defaultName}.${ext}`,
+            filters: [
+                {
+                    name: filterName,
+                    extensions: [ext],
+                },
+            ],
+        });
+
+        if (!filePath) {
+            // User cancelled the dialog
+            return false;
+        }
+
+        // Call Tauri backend to convert and save
+        await invoke("export_document", {
+            documentId,
+            format,
+            outputPath: filePath,
+        });
+
+        return true;
+    } catch (error) {
+        console.error("Export failed:", error);
+        throw error;
+    }
+}

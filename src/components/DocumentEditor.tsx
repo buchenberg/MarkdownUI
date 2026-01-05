@@ -6,6 +6,7 @@ import ZoomControls from "./ZoomControls";
 import { Document } from "../App";
 import { useTheme } from "../ThemeContext";
 import * as api from "../api";
+import type { ExportFormat } from "../api";
 
 interface DocumentEditorProps {
     document: Document;
@@ -80,6 +81,23 @@ export default function DocumentEditor({
         } catch (error) {
             console.error("Export failed:", error);
             alert("Failed to export Markdown");
+        }
+    };
+
+    const handleExportDocument = async (format: ExportFormat) => {
+        try {
+            const success = await api.exportDocument(
+                document.id,
+                format,
+                name || "document",
+            );
+
+            if (success) {
+                console.log(`Document exported as ${format} successfully`);
+            }
+        } catch (error) {
+            console.error("Export failed:", error);
+            alert(`Failed to export as ${format.toUpperCase()}`);
         }
     };
 
@@ -222,6 +240,7 @@ export default function DocumentEditor({
                                     onZoomOut={handleZoomOut}
                                     onResetZoom={handleResetZoom}
                                     onExportMd={handleExportMd}
+                                    onExportDocument={handleExportDocument}
                                 />
                             </div>
                             <div className="flex-1 overflow-auto">

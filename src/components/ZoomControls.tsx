@@ -1,9 +1,13 @@
+import { useState, useRef, useEffect } from "react";
+import type { ExportFormat } from "../api";
+
 interface ZoomControlsProps {
     zoomLevel: number;
     onZoomIn: () => void;
     onZoomOut: () => void;
     onResetZoom: () => void;
     onExportMd?: () => void;
+    onExportDocument?: (format: ExportFormat) => void;
     minZoom?: number;
     maxZoom?: number;
 }
@@ -14,12 +18,36 @@ export default function ZoomControls({
     onZoomOut,
     onResetZoom,
     onExportMd,
+    onExportDocument,
     minZoom = 0.3,
     maxZoom = 3.0,
 }: ZoomControlsProps) {
     const zoomPercentage = Math.round(zoomLevel * 100);
     const canZoomIn = zoomLevel < maxZoom;
     const canZoomOut = zoomLevel > minZoom;
+    const [showExportMenu, setShowExportMenu] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setShowExportMenu(false);
+            }
+        };
+
+        if (showExportMenu) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [showExportMenu]);
+
+    const handleExportFormat = (format: ExportFormat) => {
+        setShowExportMenu(false);
+        onExportDocument?.(format);
+    };
 
     return (
         <div className="flex items-center gap-2">
@@ -56,15 +84,52 @@ export default function ZoomControls({
                 100%
             </button>
 
-            {onExportMd && (
-                <button
-                    className="w-8 h-8 bg-green-500 text-white rounded flex items-center justify-center text-sm hover:bg-green-600 transition-colors"
-                    onClick={onExportMd}
-                    title="Export Markdown"
-                    aria-label="Export Markdown"
-                >
-                    ⬇️
-                </button>
+            {(onExportMd || onExportDocument) && (
+                <div className="relative" ref={menuRef}>
+                    <button
+                        className="w-8 h-8 bg-green-500 text-white rounded flex items-center justify-center text-sm hover:bg-green-600 transition-colors"
+                        onClick={() => setShowExportMenu(!showExportMenu)}
+                        title="Export Document"
+                        aria-label="Export Document"
+                    >
+                        ⬇️
+                    </button>
+
+                    {showExportMenu && (
+                        <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase">
+                                Export As
+                            </div>
+                            {onExportMd && (
+                                <button
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                    onClick={() => {
+                                        setShowExportMenu(false);
+                                        onExportMd();
+                                    }}
+                                >
+                                    📝 Markdown (.md)
+                                </button>
+                            )}
+                            {onExportDocument && (
+                                <>
+                                    <button
+                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                        onClick={() => handleExportFormat("html")}
+                                    >
+                                        🌐 HTML (.html)
+                                    </button>
+                                    <button
+                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                        onClick={() => handleExportFormat("pdf")}
+                                    >
+                                        📄 PDF (.pdf)
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );

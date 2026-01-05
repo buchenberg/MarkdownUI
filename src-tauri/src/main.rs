@@ -2,9 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod database;
+mod converter;
 
 use database::Database;
+use converter::{ExportFormat, convert_markdown};
 use std::sync::Mutex;
+use std::fs;
 use tauri::{State, Manager};
 use tauri::api::path::app_data_dir;
 
@@ -91,6 +94,33 @@ fn delete_document(db: DbState, id: i64) -> Result<bool, String> {
     db.delete_document(id).map_err(|e| e.to_string())
 }
 
+/// Export a document to the specified format (html, pdf, docx)
+#[tauri::command]
+fn export_document(
+    db: DbState,
+    document_id: i64,
+    format: String,
+    output_path: String,
+) -> Result<(), String> {
+    // Get document from database
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let document = db.get_document(document_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Document {} not found", document_id))?;
+    
+    // Parse format
+    let export_format = ExportFormat::from_str(&format)?;
+    
+    // Convert markdown to target format
+    let output_bytes = convert_markdown(&document.content, &export_format)?;
+    
+    // Write to file
+    fs::write(&output_path, output_bytes)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -116,6 +146,7 @@ fn main() {
             create_document,
             update_document,
             delete_document,
+            export_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
