@@ -1,6 +1,6 @@
 [package]
 name = "markdown-ui"
-version = "1.0.3"
+version = "1.0.4"
 description = "Markdown document viewer and editor with Mermaid support"
 authors = ["Gregory Buchenberger"]
 license = ""
@@ -15,7 +15,7 @@ tauri = { version = "1.5", features = [ "fs-create-dir", "fs-remove-dir", "fs-re
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
-shiva = { version = "1.4.9", features = ["markdown", "html", "pdf"] }
+shiva = { version = "1.4.9", features = ["markdown", "html"] }
 bytes = "1"
 
 [features]
