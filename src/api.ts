@@ -116,8 +116,8 @@ export async function exportMarkdown(
     }
 }
 
-// Document Export API (HTML, PDF)
-export type ExportFormat = "html" | "pdf";
+// Document Export API (HTML only - PDF removed due to stability issues)
+export type ExportFormat = "html";
 
 export async function exportDocument(
     documentId: number,
@@ -128,7 +128,6 @@ export async function exportDocument(
         // Map format to file extension and filter name
         const formatInfo: Record<ExportFormat, { ext: string; name: string }> = {
             html: { ext: "html", name: "HTML Files" },
-            pdf: { ext: "pdf", name: "PDF Files" },
         };
 
         const { ext, name: filterName } = formatInfo[format];

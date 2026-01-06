@@ -112,20 +112,12 @@ export default function ZoomControls({
                                 </button>
                             )}
                             {onExportDocument && (
-                                <>
-                                    <button
-                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                                        onClick={() => handleExportFormat("html")}
-                                    >
-                                        🌐 HTML (.html)
-                                    </button>
-                                    <button
-                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                                        onClick={() => handleExportFormat("pdf")}
-                                    >
-                                        📄 PDF (.pdf)
-                                    </button>
-                                </>
+                                <button
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                    onClick={() => handleExportFormat("html")}
+                                >
+                                    🌐 HTML (.html)
+                                </button>
                             )}
                         </div>
                     )}
