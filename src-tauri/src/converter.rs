@@ -19,7 +19,7 @@ impl ExportFormat {
     }
 }
 
-/// HTML template with modern styling
+/// HTML template with modern styling and Mermaid.js support
 const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,6 +158,15 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
             margin-right: 0.5em;
         }
         
+        /* Mermaid diagram styling */
+        .mermaid {
+            text-align: center;
+            margin: 16px 0;
+            background-color: var(--code-bg);
+            padding: 16px;
+            border-radius: 6px;
+        }
+        
         @media print {
             body {
                 max-width: none;
@@ -180,16 +189,35 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
             }
         }
     </style>
+    <!-- Mermaid.js for diagram rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Detect dark mode
+            const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            mermaid.initialize({
+                startOnLoad: true,
+                theme: isDark ? 'dark' : 'default',
+                securityLevel: 'loose'
+            });
+        });
+    </script>
 </head>
 <body>
 {{CONTENT}}
 </body>
 </html>"#;
 
+/// Unique placeholder for mermaid blocks that won't be modified by Shiva
+const MERMAID_PLACEHOLDER: &str = "MERMAID_DIAGRAM_PLACEHOLDER_";
+
 /// Convert markdown content to the specified format
 pub fn convert_markdown(content: &str, format: &ExportFormat) -> Result<Vec<u8>, String> {
+    // Extract mermaid blocks and replace with placeholders
+    let (processed_content, mermaid_blocks) = extract_mermaid_blocks(content);
+    
     // Parse markdown to Common Document Model
-    let input_bytes = Bytes::from(content.to_string());
+    let input_bytes = Bytes::from(processed_content);
     let document = shiva::markdown::Transformer::parse(&input_bytes)
         .map_err(|e| format!("Failed to parse markdown: {:?}", e))?;
 
@@ -202,8 +230,20 @@ pub fn convert_markdown(content: &str, format: &ExportFormat) -> Result<Vec<u8>,
             // Extract title from first heading or use default
             let title = extract_title(content);
             
-            // Wrap raw HTML with styled template
-            let html_content = String::from_utf8_lossy(&raw_html);
+            // Convert raw HTML and inject mermaid divs back
+            let mut html_content = String::from_utf8_lossy(&raw_html).to_string();
+            
+            // Replace placeholders with actual mermaid divs
+            for (i, mermaid_code) in mermaid_blocks.iter().enumerate() {
+                let placeholder = format!("{}{}", MERMAID_PLACEHOLDER, i);
+                let mermaid_div = format!(
+                    "<div class=\"mermaid\">\n{}\n</div>",
+                    mermaid_code.trim()
+                );
+                html_content = html_content.replace(&placeholder, &mermaid_div);
+            }
+            
+            // Wrap with styled template
             let styled_html = HTML_TEMPLATE
                 .replace("{{TITLE}}", &title)
                 .replace("{{CONTENT}}", &html_content);
@@ -213,6 +253,36 @@ pub fn convert_markdown(content: &str, format: &ExportFormat) -> Result<Vec<u8>,
     };
 
     Ok(output_bytes.to_vec())
+}
+
+/// Extract mermaid blocks from markdown and replace with unique placeholders
+/// Returns the processed markdown and a list of mermaid diagram contents
+fn extract_mermaid_blocks(content: &str) -> (String, Vec<String>) {
+    let mut result = String::new();
+    let mut mermaid_blocks = Vec::new();
+    let mut in_mermaid = false;
+    let mut mermaid_content = String::new();
+    
+    for line in content.lines() {
+        if line.trim() == "```mermaid" {
+            in_mermaid = true;
+            mermaid_content.clear();
+        } else if in_mermaid && line.trim() == "```" {
+            in_mermaid = false;
+            // Store the mermaid content and add a placeholder
+            let placeholder = format!("{}{}\n", MERMAID_PLACEHOLDER, mermaid_blocks.len());
+            result.push_str(&placeholder);
+            mermaid_blocks.push(mermaid_content.clone());
+        } else if in_mermaid {
+            mermaid_content.push_str(line);
+            mermaid_content.push('\n');
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+    
+    (result, mermaid_blocks)
 }
 
 /// Extract title from first heading in markdown content

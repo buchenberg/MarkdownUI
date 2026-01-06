@@ -2830,7 +2830,7 @@ dependencies = [
 
 [[package]]
 name = "markdown-ui"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "bytes",
  "rusqlite",
