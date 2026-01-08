@@ -335,7 +335,7 @@ code {
 
 /* Firefox */
 * {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
     scrollbar-color: #cbd5e1 #f1f5f9;
 }
 
