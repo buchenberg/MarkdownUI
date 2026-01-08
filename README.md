@@ -19,14 +19,8 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
 - **Dark Mode**: Full dark/light theme support across all UI elements
 - **Resizable Panes**: Adjust sidebar, editor, and preview widths
 - **Unified Header**: Clean single-header layout with all controls
-
-## Screenshots
-
-### Dark Mode
-![Dark Mode Editor](docs/screenshots/dark-mode.png)
-
-### Light Mode
-![Light Mode Editor](docs/screenshots/light-mode.png)
+- **Custom Navigation**: Resizable sidebar with snap-to-collapse behavior
+- **Enhanced Scrollbars**: Custom styled scrollbars for improved visibility
 
 ## Getting Started
 

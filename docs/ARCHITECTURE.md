@@ -49,7 +49,8 @@ The frontend is built with React 18, TypeScript, and styled with TailwindCSS.
 
 The root component that manages:
 
-- **Application Layout**: Unified header with hamburger menu, document controls, and sidebar
+- **Application Layout**: Unified header with hamburger menu, document controls, and custom resizable sidebar with snap-to-collapse
+- **Sidebar Logic**: Implements custom drag handling, min-width protection (300px), and snap-to-collapse (< 240px)
 - **State Management**: Collections, documents, and editor state
 - **CRUD Operations**: Delegates to [api.ts](../src/api.ts) for backend communication
 
@@ -162,9 +163,8 @@ Resizable split pane component with collapse functionality.
 
 **Features:**
 - Draggable divider for resizing
-- Collapse/expand buttons for each pane
-- Minimum width constraints
-- Smooth animations
+- Uses `react-resizable-panels` (or custom implementation in App.tsx)
+- Note: The main sidebar uses a custom implementation in `App.tsx` for specific "thin divider" styling and snap behavior.
 
 ---
 
