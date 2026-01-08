@@ -52,7 +52,7 @@ export default function ZoomControls({
     return (
         <div className="flex items-center gap-2">
             <button
-                className="w-8 h-8 bg-gray-200 text-gray-700 rounded flex items-center justify-center text-lg font-bold hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                className="w-8 h-8 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded flex items-center justify-center text-lg font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed"
                 onClick={onZoomOut}
                 disabled={!canZoomOut}
                 title="Zoom Out"
@@ -61,12 +61,12 @@ export default function ZoomControls({
                 −
             </button>
 
-            <div className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
-                <span className="text-gray-700">{zoomPercentage}%</span>
+            <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-medium">
+                <span className="text-gray-700 dark:text-gray-200">{zoomPercentage}%</span>
             </div>
 
             <button
-                className="w-8 h-8 bg-gray-200 text-gray-700 rounded flex items-center justify-center text-lg font-bold hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                className="w-8 h-8 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded flex items-center justify-center text-lg font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed"
                 onClick={onZoomIn}
                 disabled={!canZoomIn}
                 title="Zoom In"
@@ -76,7 +76,7 @@ export default function ZoomControls({
             </button>
 
             <button
-                className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 transition-colors"
+                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                 onClick={onResetZoom}
                 title="Reset Zoom to 100%"
                 aria-label="Reset Zoom"
@@ -87,22 +87,36 @@ export default function ZoomControls({
             {(onExportMd || onExportDocument) && (
                 <div className="relative" ref={menuRef}>
                     <button
-                        className="w-8 h-8 bg-green-500 text-white rounded flex items-center justify-center text-sm hover:bg-green-600 transition-colors"
+                        className="px-3 py-1.5 bg-blue-500 dark:bg-blue-600 text-white rounded flex items-center justify-center gap-1.5 text-sm font-medium hover:bg-blue-600 dark:hover:bg-blue-700 transition-colors"
                         onClick={() => setShowExportMenu(!showExportMenu)}
                         title="Export Document"
                         aria-label="Export Document"
                     >
-                        ⬇️
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Export
                     </button>
 
                     {showExportMenu && (
-                        <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase">
+                        <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                                 Export As
                             </div>
                             {onExportMd && (
                                 <button
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                     onClick={() => {
                                         setShowExportMenu(false);
                                         onExportMd();
@@ -113,10 +127,18 @@ export default function ZoomControls({
                             )}
                             {onExportDocument && (
                                 <button
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                     onClick={() => handleExportFormat("html")}
                                 >
                                     🌐 HTML (.html)
+                                </button>
+                            )}
+                            {onExportDocument && (
+                                <button
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                                    onClick={() => handleExportFormat("pdf")}
+                                >
+                                    📄 PDF (.pdf)
                                 </button>
                             )}
                         </div>

@@ -16,6 +16,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 shiva = { version = "1.4.9", features = ["markdown", "html"] }
+carbonpdf = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+chromiumoxide = "0.8"
+futures = "0.3"
 bytes = "1"
 
 [features]

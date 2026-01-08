@@ -1,12 +1,14 @@
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use shiva::core::TransformerTrait;
+use std::path::PathBuf;
 
 /// Supported export formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExportFormat {
     Html,
+    Pdf,
 }
 
 impl ExportFormat {
@@ -14,7 +16,8 @@ impl ExportFormat {
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
             "html" => Ok(ExportFormat::Html),
-            _ => Err(format!("Unsupported format: {}. Supported: html", s)),
+            "pdf" => Ok(ExportFormat::Pdf),
+            _ => Err(format!("Unsupported format: {}. Supported: html, pdf", s)),
         }
     }
 }
@@ -250,6 +253,11 @@ pub fn convert_markdown(content: &str, format: &ExportFormat) -> Result<Vec<u8>,
             
             Bytes::from(styled_html.into_bytes())
         }
+        // PDF format is handled in main.rs via convert_html_to_pdf
+        // This arm should never be reached since PDF goes through HTML first
+        ExportFormat::Pdf => {
+            return Err("PDF format should be handled via convert_html_to_pdf".to_string());
+        }
     };
 
     Ok(output_bytes.to_vec())
@@ -294,4 +302,76 @@ fn extract_title(content: &str) -> String {
         }
     }
     "Document".to_string()
+}
+
+/// Check if Chrome/Chromium is available for PDF generation
+/// Returns the path to the Chrome executable if found
+pub fn check_chrome_available() -> Result<PathBuf, String> {
+    use chromiumoxide::detection::{default_executable, DetectionOptions};
+    
+    default_executable(DetectionOptions::default())
+        .map_err(|_| "Chrome, Chromium, or Edge is required for PDF export. Please install a Chromium-based browser.".to_string())
+}
+
+/// Convert HTML content to PDF using Chrome (async)
+/// Uses chromiumoxide's new headless mode to suppress window flash on Windows
+pub async fn convert_html_to_pdf(html: &str) -> Result<Vec<u8>, String> {
+    use chromiumoxide::browser::{Browser, BrowserConfig};
+    use chromiumoxide::cdp::browser_protocol::page::PrintToPdfParams;
+    use futures::StreamExt;
+    
+    // Build browser config with new headless mode (Chrome 112+)
+    // This uses --headless=new which should suppress window flash better
+    let config = BrowserConfig::builder()
+        .new_headless_mode()
+        .window_size(1200, 1600)
+        .arg("--disable-gpu")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .build()
+        .map_err(|e| format!("Failed to build browser config: {:?}", e))?;
+    
+    // Launch browser
+    let (browser, mut handler) = Browser::launch(config)
+        .await
+        .map_err(|e| format!("Failed to launch browser: {:?}", e))?;
+    
+    // Spawn handler task
+    let handler_task = tokio::spawn(async move {
+        while let Some(_) = handler.next().await {}
+    });
+    
+    // Create a new page
+    let page = browser.new_page("about:blank")
+        .await
+        .map_err(|e| format!("Failed to create page: {:?}", e))?;
+    
+    // Set HTML content
+    page.set_content(html)
+        .await
+        .map_err(|e| format!("Failed to set HTML content: {:?}", e))?;
+    
+    // Wait for content to render (especially for Mermaid.js diagrams)
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    
+    // Print to PDF with A4 size and margins
+    let pdf_params = PrintToPdfParams::builder()
+        .paper_width(8.27)   // A4 width in inches
+        .paper_height(11.69) // A4 height in inches
+        .margin_top(0.5)
+        .margin_bottom(0.5)
+        .margin_left(0.5)
+        .margin_right(0.5)
+        .print_background(true)
+        .build();
+    
+    let pdf_bytes = page.pdf(pdf_params)
+        .await
+        .map_err(|e| format!("Failed to generate PDF: {:?}", e))?;
+    
+    // Close browser
+    drop(browser);
+    handler_task.abort();
+    
+    Ok(pdf_bytes)
 }

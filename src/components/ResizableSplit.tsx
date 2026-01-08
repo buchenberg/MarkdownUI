@@ -86,7 +86,7 @@ export default function ResizableSplit({
             </div>
             {paneVisibility === "both" && (
                 <div
-                    className="w-4 bg-gray-300 cursor-col-resize relative hover:bg-gray-400 transition-colors group"
+                    className="w-4 bg-gray-300 dark:bg-gray-700 cursor-col-resize relative hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors group"
                     onMouseDown={(e) => {
                         e.preventDefault();
                         setIsDragging(true);
@@ -95,7 +95,7 @@ export default function ResizableSplit({
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div className="flex flex-col gap-2 opacity-70 group-hover:opacity-100 transition-opacity duration-200">
                             <button
-                                className="w-6 h-6 bg-white border border-gray-300 text-gray-700 rounded flex items-center justify-center hover:bg-gray-100 hover:border-gray-400 transition-colors shadow-sm"
+                                className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     toggleLeftPane();
@@ -114,7 +114,7 @@ export default function ResizableSplit({
                                 </svg>
                             </button>
                             <button
-                                className="w-6 h-6 bg-white border border-gray-300 text-gray-700 rounded flex items-center justify-center hover:bg-gray-100 hover:border-gray-400 transition-colors shadow-sm"
+                                className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     toggleRightPane();
@@ -137,10 +137,10 @@ export default function ResizableSplit({
                 </div>
             )}
             {paneVisibility === "left" && (
-                <div className="w-4 bg-gray-300 cursor-col-resize relative hover:bg-gray-400 transition-colors group">
+                <div className="w-4 bg-gray-300 dark:bg-gray-700 cursor-col-resize relative hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors group">
                     <div className="absolute inset-0 flex items-center justify-center">
                         <button
-                            className="w-6 h-6 bg-white border border-gray-300 text-gray-700 rounded flex items-center justify-center hover:bg-gray-100 hover:border-gray-400 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
+                            className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
                             onClick={toggleRightPane}
                             title="Show Right Pane"
                         >
@@ -159,10 +159,10 @@ export default function ResizableSplit({
                 </div>
             )}
             {paneVisibility === "right" && (
-                <div className="w-4 bg-gray-300 cursor-col-resize relative hover:bg-gray-400 transition-colors group">
+                <div className="w-4 bg-gray-300 dark:bg-gray-700 cursor-col-resize relative hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors group">
                     <div className="absolute inset-0 flex items-center justify-center">
                         <button
-                            className="w-6 h-6 bg-white border border-gray-300 text-gray-700 rounded flex items-center justify-center hover:bg-gray-100 hover:border-gray-400 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
+                            className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
                             onClick={toggleLeftPane}
                             title="Show Left Pane"
                         >

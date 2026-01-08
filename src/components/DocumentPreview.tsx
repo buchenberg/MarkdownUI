@@ -3,6 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import mermaid from "mermaid";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
+import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import { useTheme } from "../ThemeContext";
 
 interface DocumentPreviewProps {
@@ -66,14 +69,6 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const [scrollTop, setScrollTop] = useState(0);
         const { theme } = useTheme();
 
-        if (!content.trim()) {
-            return (
-                <div className={`flex items-center justify-center h-full ${theme === 'dark' ? 'text-gray-400 bg-gray-900' : 'text-gray-500 bg-white'}`}>
-                    <p>Enter Markdown content in the editor to see the preview</p>
-                </div>
-            );
-        }
-
         // Mouse event handlers for drag scrolling
         const handleMouseDown = useCallback((e: React.MouseEvent) => {
             if (!previewRef.current) return;
@@ -131,6 +126,18 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             };
         }, [isDragging, handleMouseMove, handleMouseUp]);
 
+        // CRITICAL FIX: Early return must be AFTER all hooks
+        if (!content.trim()) {
+            return (
+                <div
+                    ref={combinedRef} // Ensure ref is still attached
+                    className={`flex items-center justify-center h-full ${theme === 'dark' ? 'text-gray-400 bg-gray-900' : 'text-gray-500 bg-white'}`}
+                >
+                    <p>Enter Markdown content in the editor to see the preview</p>
+                </div>
+            );
+        }
+
         return (
             <div
                 ref={combinedRef}
@@ -165,13 +172,20 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                                     return <code {...props}>{children}</code>;
                                 }
 
-                                // Code blocks with syntax highlighting (basic)
+                                // Code blocks with syntax highlighting
                                 return (
-                                    <pre>
-                                        <code className={className} {...props}>
-                                            {children}
-                                        </code>
-                                    </pre>
+                                    <SyntaxHighlighter
+                                        style={theme === 'dark' ? oneDark : oneLight}
+                                        language={language || 'text'}
+                                        PreTag="div"
+                                        customStyle={{
+                                            margin: '1em 0',
+                                            borderRadius: '0.375rem',
+                                            fontSize: '0.875em',
+                                        }}
+                                    >
+                                        {codeString}
+                                    </SyntaxHighlighter>
                                 );
                             },
                         }}

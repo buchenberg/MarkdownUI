@@ -116,8 +116,17 @@ export async function exportMarkdown(
     }
 }
 
-// Document Export API (HTML only - PDF removed due to stability issues)
-export type ExportFormat = "html";
+// Document Export API
+export type ExportFormat = "html" | "pdf";
+
+// Check if PDF export is available (Chrome installed)
+export async function checkPdfAvailable(): Promise<boolean> {
+    try {
+        return await invoke<boolean>("check_pdf_available");
+    } catch {
+        return false;
+    }
+}
 
 export async function exportDocument(
     documentId: number,
@@ -128,6 +137,7 @@ export async function exportDocument(
         // Map format to file extension and filter name
         const formatInfo: Record<ExportFormat, { ext: string; name: string }> = {
             html: { ext: "html", name: "HTML Files" },
+            pdf: { ext: "pdf", name: "PDF Files" },
         };
 
         const { ext, name: filterName } = formatInfo[format];

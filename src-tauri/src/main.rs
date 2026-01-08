@@ -5,7 +5,7 @@ mod database;
 mod converter;
 
 use database::Database;
-use converter::{ExportFormat, convert_markdown};
+use converter::{ExportFormat, convert_markdown, check_chrome_available, convert_html_to_pdf};
 use std::sync::Mutex;
 use std::fs;
 use tauri::{State, Manager};
@@ -94,29 +94,47 @@ fn delete_document(db: DbState, id: i64) -> Result<bool, String> {
     db.delete_document(id).map_err(|e| e.to_string())
 }
 
-/// Export a document to the specified format (html, pdf, docx)
+/// Check if PDF export is available (Chrome installed)
 #[tauri::command]
-fn export_document(
-    db: DbState,
+fn check_pdf_available() -> Result<bool, String> {
+    check_chrome_available().map(|_| true)
+}
+
+/// Export a document to the specified format (html, pdf)
+#[tauri::command]
+async fn export_document(
+    db: DbState<'_>,
     document_id: i64,
     format: String,
     output_path: String,
 ) -> Result<(), String> {
     // Get document from database
-    let db = db.lock().map_err(|e| e.to_string())?;
-    let document = db.get_document(document_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Document {} not found", document_id))?;
+    let document = {
+        let db = db.lock().map_err(|e| e.to_string())?;
+        db.get_document(document_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Document {} not found", document_id))?
+    };
     
     // Parse format
     let export_format = ExportFormat::from_str(&format)?;
     
-    // Convert markdown to target format
-    let output_bytes = convert_markdown(&document.content, &export_format)?;
-    
-    // Write to file
-    fs::write(&output_path, output_bytes)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    // Convert and write based on format
+    match export_format {
+        ExportFormat::Html => {
+            let output_bytes = convert_markdown(&document.content, &export_format)?;
+            fs::write(&output_path, output_bytes)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+        }
+        ExportFormat::Pdf => {
+            // First convert to HTML, then to PDF
+            let html_bytes = convert_markdown(&document.content, &ExportFormat::Html)?;
+            let html = String::from_utf8_lossy(&html_bytes).to_string();
+            let pdf_bytes = convert_html_to_pdf(&html).await?;
+            fs::write(&output_path, pdf_bytes)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+        }
+    }
     
     Ok(())
 }
@@ -146,6 +164,7 @@ fn main() {
             create_document,
             update_document,
             delete_document,
+            check_pdf_available,
             export_document,
         ])
         .run(tauri::generate_context!())

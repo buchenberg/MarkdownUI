@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Collection, Document } from "../App";
+import type { Collection, Document } from "../api";
 import * as api from "../api";
 import ConfirmModal from "./ConfirmModal";
 
@@ -189,30 +189,34 @@ graph TD
                 onConfirm={handleDeleteDocument}
                 onCancel={() => setDeleteDocumentId(null)}
             />
-            <div className="flex justify-between items-center p-4 border-b border-gray-300">
-                <h2 className="text-lg font-semibold text-gray-800">Collections</h2>
+            <div className="flex justify-between items-center p-4 border-b border-gray-300 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Collections</h2>
                 <button
-                    className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-lg font-bold hover:bg-blue-600 transition-colors"
+                    className="px-3 py-1.5 bg-green-500 text-white rounded flex items-center justify-center gap-1.5 text-sm font-medium hover:bg-green-600 transition-colors"
                     onClick={() => setShowNewCollection(!showNewCollection)}
                 >
-                    +
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    New
                 </button>
             </div>
 
             {showNewCollection && (
-                <div className="p-4 border-b border-gray-300 bg-white">
+                <div className="p-4 border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
                     <input
                         type="text"
                         placeholder="Collection name"
                         value={newCollectionName}
                         onChange={(e) => setNewCollectionName(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded mb-2"
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     />
                     <textarea
                         placeholder="Description (optional)"
                         value={newCollectionDesc}
                         onChange={(e) => setNewCollectionDesc(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded mb-2 resize-none"
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded mb-2 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         rows={3}
                     />
                     <div className="flex gap-2">
@@ -236,26 +240,26 @@ graph TD
                 {collections.map((collection) => (
                     <div
                         key={collection.id}
-                        className={`flex items-center justify-between p-3 border-b border-gray-200 cursor-pointer transition-colors ${selectedCollection?.id === collection.id
-                                ? "bg-blue-50 border-blue-200"
-                                : "hover:bg-gray-50"
+                        className={`flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors ${selectedCollection?.id === collection.id
+                            ? "bg-blue-100 dark:bg-blue-900/50 border-blue-200 dark:border-blue-700"
+                            : "hover:bg-gray-50 dark:hover:bg-gray-800"
                             }`}
                     >
                         <div
                             className="flex-1 min-w-0"
                             onClick={() => onCollectionSelect(collection)}
                         >
-                            <div className="font-medium text-gray-900 truncate">
+                            <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
                                 {collection.name}
                             </div>
                             {collection.description && (
-                                <div className="text-sm text-gray-600 truncate mt-1">
+                                <div className="text-sm text-gray-600 dark:text-gray-400 truncate mt-1">
                                     {collection.description}
                                 </div>
                             )}
                         </div>
                         <button
-                            className="w-6 h-6 text-gray-400 hover:text-red-500 transition-colors flex items-center justify-center ml-2"
+                            className="w-6 h-6 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center justify-center ml-2"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setDeleteCollectionId(collection.id);
@@ -269,24 +273,33 @@ graph TD
             </div>
 
             {selectedCollection && (
-                <div className="border-t border-gray-300">
-                    <div className="flex justify-between items-center p-4 border-b border-gray-300">
-                        <h3 className="font-medium text-gray-800">Documents</h3>
+                <div className="border-t border-gray-300 dark:border-gray-700">
+                    <div className="flex justify-between items-center p-4 border-b border-gray-300 dark:border-gray-700">
+                        <h3 className="font-medium text-gray-800 dark:text-gray-100">Documents</h3>
                         <div className="flex gap-2">
                             {onDocumentCreate && (
                                 <button
-                                    className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 transition-colors"
+                                    className="px-3 py-1.5 bg-green-500 text-white rounded flex items-center justify-center gap-1.5 text-sm font-medium hover:bg-green-600 transition-colors"
                                     onClick={handleCreateDocument}
                                 >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19" />
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
                                     New
                                 </button>
                             )}
                             <label
-                                className={`px-3 py-1 rounded text-sm cursor-pointer transition-colors ${isUploading
-                                        ? "bg-gray-400 text-white cursor-not-allowed"
-                                        : "bg-blue-500 text-white hover:bg-blue-600"
+                                className={`px-3 py-1.5 rounded flex items-center justify-center gap-1.5 text-sm font-medium cursor-pointer transition-colors ${isUploading
+                                    ? "bg-gray-400 text-white cursor-not-allowed"
+                                    : "bg-blue-500 text-white hover:bg-blue-600"
                                     }`}
                             >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
                                 {isUploading ? "Uploading..." : "Upload"}
                                 <input
                                     type="file"
@@ -302,19 +315,19 @@ graph TD
                         {documents.map((document) => (
                             <div
                                 key={document.id}
-                                className={`flex items-center justify-between p-3 border-b border-gray-200 cursor-pointer transition-colors ${selectedDocument?.id === document.id
-                                        ? "bg-blue-50 border-blue-200"
-                                        : "hover:bg-gray-50"
+                                className={`flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors ${selectedDocument?.id === document.id
+                                    ? "bg-blue-100 dark:bg-blue-900/50 border-blue-200 dark:border-blue-700"
+                                    : "hover:bg-gray-50 dark:hover:bg-gray-800"
                                     }`}
                             >
                                 <div
-                                    className="flex-1 truncate"
+                                    className="flex-1 truncate text-gray-900 dark:text-gray-100"
                                     onClick={() => onDocumentSelect(document)}
                                 >
                                     {document.name}
                                 </div>
                                 <button
-                                    className="w-6 h-6 text-gray-400 hover:text-red-500 transition-colors flex items-center justify-center ml-2"
+                                    className="w-6 h-6 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center justify-center ml-2"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setDeleteDocumentId(document.id);
@@ -326,7 +339,7 @@ graph TD
                             </div>
                         ))}
                         {documents.length === 0 && (
-                            <div className="p-4 text-center text-gray-500">
+                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                                 No documents in this collection
                             </div>
                         )}
