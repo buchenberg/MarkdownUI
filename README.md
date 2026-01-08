@@ -22,6 +22,15 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
 - **Custom Navigation**: Resizable sidebar with snap-to-collapse behavior
 - **Enhanced Scrollbars**: Custom styled scrollbars for improved visibility
 
+## Installation
+
+Download the latest release for your platform from the [GitHub Releases](https://github.com/buchenberg/MarkdownUI/releases) page.
+
+**Supported Platforms:**
+- **Windows**: Installer (`.msi`)
+- **macOS**: Disk Image (`.dmg`)
+- **Linux**: Debian package (`.deb`) and AppImage
+
 ## Getting Started
 
 ### Prerequisites
