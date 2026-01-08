@@ -17,7 +17,6 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
   - PDF - Print-ready document (requires Chrome/Chromium)
 - **Zoom Controls**: Adjust preview zoom level (30% - 300%)
 - **Dark Mode**: Full dark/light theme support across all UI elements
-- **Resizable Panes**: Adjust sidebar, editor, and preview widths
 - **Unified Header**: Clean single-header layout with all controls
 - **Custom Navigation**: Resizable sidebar with snap-to-collapse behavior
 - **Enhanced Scrollbars**: Custom styled scrollbars for improved visibility
@@ -30,30 +29,6 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 - **Windows**: Installer (`.msi`)
 - **macOS**: Disk Image (`.dmg`)
 - **Linux**: Debian package (`.deb`) and AppImage
-
-## Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18 or later)
-- [Rust](https://rustup.rs/) (latest stable)
-- Chrome, Chromium, or Edge (for PDF export)
-
-### Installation
-
-```bash
-# Install dependencies
-npm install
-
-# Run in development mode
-npm run tauri dev
-```
-
-### Building for Production
-
-```bash
-npm run tauri build
-```
 
 ## Usage
 
@@ -74,6 +49,32 @@ npm run tauri build
 
 7. **Export**: Click the Export button to save as Markdown, HTML, or PDF
 8. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
+
+## Development
+
+Instructions for building the application from source.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [Rust](https://rustup.rs/) (latest stable)
+- Chrome, Chromium, or Edge (for PDF export)
+
+### Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Run in development mode
+npm run tauri dev
+```
+
+### Building for Production
+
+```bash
+npm run tauri build
+```
 
 ## Tech Stack
 
