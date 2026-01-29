@@ -62,6 +62,15 @@ export default function DocumentEditor({
         }
     }, [zoomLevel]);
 
+    // Navigate to specific line
+    const handleNavigateToLine = (line: number) => {
+        if (editorRef.current) {
+            editorRef.current.revealLineInCenter(line);
+            editorRef.current.setPosition({ lineNumber: line, column: 1 });
+            editorRef.current.focus();
+        }
+    };
+
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="flex-1 min-h-0">
@@ -107,6 +116,7 @@ export default function DocumentEditor({
                                     content={content}
                                     zoomLevel={zoomLevel}
                                     ref={previewRef}
+                                    onNavigateToLine={handleNavigateToLine}
                                 />
                             </div>
                         </div>
