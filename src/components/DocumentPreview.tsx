@@ -12,6 +12,7 @@ import { useTheme } from "../ThemeContext";
 interface DocumentPreviewProps {
     content: string;
     zoomLevel?: number;
+    onNavigateToLine?: (line: number) => void;
 }
 
 // Mermaid code block component
@@ -60,7 +61,7 @@ function MermaidDiagram({ code, theme }: { code: string; theme: 'light' | 'dark'
 }
 
 const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
-    function DocumentPreview({ content, zoomLevel = 1.0 }, ref) {
+    function DocumentPreview({ content, zoomLevel = 1.0, onNavigateToLine }, ref) {
         const previewRef = useRef<HTMLDivElement>(null);
         const combinedRef = useCombinedRefs(ref, previewRef);
         const [isDragging, setIsDragging] = useState(false);
@@ -70,6 +71,37 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const [scrollTop, setScrollTop] = useState(0);
         const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
         const { theme } = useTheme();
+
+        const HeadingRenderer = ({ children, node }: any) => {
+            // Access the line number from the node position
+            const line = node?.position?.start?.line;
+            const Tag = node?.tagName as keyof JSX.IntrinsicElements || 'h1'; // Default to h1 if undefined
+
+            return (
+                <Tag className="group relative flex items-center">
+                    <span className="flex-1">{children}</span>
+                    {line && onNavigateToLine && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToLine(line);
+                            }}
+                            className={`opacity-0 group-hover:opacity-100 transition-opacity ml-2 p-1 rounded-md ${theme === 'dark'
+                                ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200'
+                                : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                                }`}
+                            title="Go to source"
+                            aria-label="Go to source"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                        </button>
+                    )}
+                </Tag>
+            );
+        };
 
         // Mouse event handlers for drag scrolling
         const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -154,8 +186,12 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         if (selection) {
                             selection.removeAllRanges();
                             const range = document.createRange();
-                            range.selectNodeContents(previewRef.current);
-                            selection.addRange(range);
+                            // Select inner content div to avoid issues with context menu DOM insertion
+                            const content = previewRef.current.querySelector('.markdown-preview');
+                            if (content) {
+                                range.selectNodeContents(content);
+                                selection.addRange(range);
+                            }
                         }
                     }
                 }
@@ -244,7 +280,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             >
                 {contextMenu && (
                     <div
-                        className={`fixed z-[100] rounded-md shadow-lg border py-1 min-w-[160px] ${theme === 'dark'
+                        className={`fixed z-[100] rounded-md shadow-lg border py-1 min-w-[160px] select-none ${theme === 'dark'
                             ? 'bg-gray-800 border-gray-700 text-gray-200'
                             : 'bg-white border-gray-200 text-gray-700'
                             }`}
@@ -252,14 +288,14 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         onClick={(e) => e.stopPropagation()}
                     >
                         <button
-                            className={`w-full text-left px-4 py-2 text-sm hover:${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+                            className={`w-full text-left px-4 py-2 text-sm ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                                 }`}
                             onClick={handleCopy}
                         >
                             Copy
                         </button>
                         <button
-                            className={`w-full text-left px-4 py-2 text-sm hover:${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+                            className={`w-full text-left px-4 py-2 text-sm ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                                 }`}
                             onClick={handleCopyAsMarkdown}
                         >
@@ -310,6 +346,13 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                                     </SyntaxHighlighter>
                                 );
                             },
+                            h1: HeadingRenderer,
+                            h2: HeadingRenderer,
+                            h3: HeadingRenderer,
+                            h4: HeadingRenderer,
+                            h5: HeadingRenderer,
+                            h6: HeadingRenderer,
+                            pre: ({ children }) => <>{children}</>,
                         }}
                     >
                         {content}
