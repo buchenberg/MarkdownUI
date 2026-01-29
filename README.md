@@ -20,6 +20,12 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
 - **Unified Header**: Clean single-header layout with all controls
 - **Custom Navigation**: Resizable sidebar with snap-to-collapse behavior
 - **Enhanced Scrollbars**: Custom styled scrollbars for improved visibility
+- **Smart Navigation**:
+  - **Go to Heading**: Click the icon next to any heading in the preview to jump to that line in the editor
+  - **Context Menu**: Improved copy functionality with "Copy" and "Copy as Markdown" options
+- **Visual Improvements**:
+  - Refined code block styling in light and dark modes
+  - Fixed semantic rendering for better accessibility
 
 ## Installation
 
