@@ -99,7 +99,7 @@ For detailed architecture documentation, see [docs/ARCHITECTURE.md](docs/ARCHITE
 
 ### Project Structure
 
-```
+```txt
 MarkdownUI/
 ├── src/                    # Frontend (React/TypeScript)
 │   ├── App.tsx             # Main application component
