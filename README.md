@@ -7,7 +7,7 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
 - **Markdown Editor**: Full-featured Monaco editor with custom dark blue theme
 - **Live Preview**: Real-time markdown rendering with support for:
   - GitHub Flavored Markdown (tables, task lists, strikethrough)
-  - Embedded Mermaid diagrams with theme support
+  - Embedded Mermaid diagrams with theme support (both ````mermaid` and `:::mermaid` syntax)
   - Code blocks with syntax highlighting (Prism)
 - **Collections**: Organize documents into collections
 - **Auto-save**: Optional automatic saving of document content
@@ -52,6 +52,18 @@ Download the latest release for your platform from the [GitHub Releases](https:/
        B --> C[End]
    ```
    ~~~
+
+   **Azure DevOps Syntax**: You can also use the `:::mermaid` syntax (common in Azure DevOps and other platforms):
+
+   ~~~markdown
+   :::mermaid
+   graph TD
+       A[Start] --> B[Process]
+       B --> C[End]
+   :::
+   ~~~
+
+   Both syntaxes are fully supported and can be mixed in the same document.
 
 7. **Export**: Click the Export button to save as Markdown, HTML, or PDF
 8. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes

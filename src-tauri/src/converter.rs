@@ -264,32 +264,42 @@ pub fn convert_markdown(content: &str, format: &ExportFormat) -> Result<Vec<u8>,
 }
 
 /// Extract mermaid blocks from markdown and replace with unique placeholders
+/// Supports both ```mermaid (standard) and :::mermaid (Azure DevOps) syntax
 /// Returns the processed markdown and a list of mermaid diagram contents
 fn extract_mermaid_blocks(content: &str) -> (String, Vec<String>) {
     let mut result = String::new();
     let mut mermaid_blocks = Vec::new();
     let mut in_mermaid = false;
     let mut mermaid_content = String::new();
-    
+
     for line in content.lines() {
-        if line.trim() == "```mermaid" {
+        let trimmed = line.trim();
+        
+        // Check for start of mermaid block (both ```mermaid and :::mermaid)
+        if trimmed == "```mermaid" || trimmed == ":::mermaid" {
             in_mermaid = true;
             mermaid_content.clear();
-        } else if in_mermaid && line.trim() == "```" {
+        } 
+        // Check for end of mermaid block
+        // For ```mermaid blocks, end with ```
+        // For :::mermaid blocks, end with :::
+        else if in_mermaid && (trimmed == "```" || trimmed == ":::") {
             in_mermaid = false;
             // Store the mermaid content and add a placeholder
             let placeholder = format!("{}{}\n", MERMAID_PLACEHOLDER, mermaid_blocks.len());
             result.push_str(&placeholder);
             mermaid_blocks.push(mermaid_content.clone());
-        } else if in_mermaid {
+        } 
+        else if in_mermaid {
             mermaid_content.push_str(line);
             mermaid_content.push('\n');
-        } else {
+        } 
+        else {
             result.push_str(line);
             result.push('\n');
         }
     }
-    
+
     (result, mermaid_blocks)
 }
 

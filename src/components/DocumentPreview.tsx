@@ -72,6 +72,23 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
         const { theme } = useTheme();
 
+        // Convert :::mermaid blocks to ```mermaid for consistent processing
+        // Use a stateful approach to properly handle multiple :::mermaid blocks
+        const processedContent = content
+            .split('\n')
+            .map((line) => {
+                // Convert opening :::mermaid to ```mermaid
+                if (/^:::mermaid\s*$/.test(line)) {
+                    return '```mermaid';
+                }
+                // Convert closing ::: to ``` (only when inside a :::mermaid block)
+                if (/^:::\s*$/.test(line)) {
+                    return '```';
+                }
+                return line;
+            })
+            .join('\n');
+
         const HeadingRenderer = ({ children, node }: any) => {
             // Access the line number from the node position
             const line = node?.position?.start?.line;
@@ -355,7 +372,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                             pre: ({ children }) => <>{children}</>,
                         }}
                     >
-                        {content}
+                        {processedContent}
                     </ReactMarkdown>
                 </div>
             </div>
