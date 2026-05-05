@@ -8,12 +8,16 @@ interface DocumentEditorProps {
     content: string;
     onContentChange: (content: string) => void;
     zoomLevel: number;
+    scrollToHeadingId?: string | null;
+    onHeadingScrolled?: () => void;
 }
 
 export default function DocumentEditor({
     content,
     onContentChange,
     zoomLevel,
+    scrollToHeadingId,
+    onHeadingScrolled,
 }: DocumentEditorProps) {
     const previewRef = useRef<HTMLDivElement>(null);
     const { theme } = useTheme();
@@ -117,6 +121,8 @@ export default function DocumentEditor({
                                     zoomLevel={zoomLevel}
                                     ref={previewRef}
                                     onNavigateToLine={handleNavigateToLine}
+                                    scrollToHeadingId={scrollToHeadingId}
+                                    onHeadingScrolled={onHeadingScrolled}
                                 />
                             </div>
                         </div>
