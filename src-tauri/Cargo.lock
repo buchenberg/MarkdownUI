@@ -3162,7 +3162,7 @@ dependencies = [
 
 [[package]]
 name = "markdown-ui"
-version = "1.0.9"
+version = "1.0.12"
 dependencies = [
  "bytes",
  "carbonpdf",

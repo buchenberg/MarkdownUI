@@ -11,10 +11,9 @@ import type { Collection, Document, ExportFormat } from "./api";
 export type { Collection, Document };
 
 function App() {
-    const [selectedCollection, setSelectedCollection] =
-        useState<Collection | null>(null);
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
     const [collections, setCollections] = useState<Collection[]>([]);
+    const [scrollToHeadingId, setScrollToHeadingId] = useState<string | null>(null);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(320); // Initial width in pixels
     const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
@@ -83,17 +82,9 @@ function App() {
         try {
             const data = await api.getCollections();
             setCollections(data);
-            if (data.length > 0 && !selectedCollection) {
-                setSelectedCollection(data[0]);
-            }
         } catch (error) {
             console.error("Failed to fetch collections:", error);
         }
-    };
-
-    const handleCollectionSelect = (collection: Collection) => {
-        setSelectedCollection(collection);
-        setSelectedDocument(null);
     };
 
     const handleDocumentSelect = (document: Document) => {
@@ -134,7 +125,6 @@ function App() {
         try {
             const newCollection = await api.createCollection(name, description);
             setCollections([...collections, newCollection]);
-            setSelectedCollection(newCollection);
             return newCollection;
         } catch (error) {
             console.error("Failed to create collection:", error);
@@ -150,10 +140,7 @@ function App() {
                     (c) => c.id !== collectionId,
                 );
                 setCollections(updatedCollections);
-                if (selectedCollection?.id === collectionId) {
-                    setSelectedCollection(
-                        updatedCollections.length > 0 ? updatedCollections[0] : null,
-                    );
+                if (selectedDocument?.collection_id === collectionId) {
                     setSelectedDocument(null);
                 }
             } else {
@@ -207,6 +194,15 @@ function App() {
     const handleAutoSaveToggle = (enabled: boolean) => {
         setAutoSaveEnabled(enabled);
         localStorage.setItem("markdown-ui-auto-save", enabled.toString());
+    };
+
+    const handleHeadingClick = (document: Document, headingId: string) => {
+        setSelectedDocument(document);
+        setScrollToHeadingId(headingId);
+    };
+
+    const handleHeadingScrolled = () => {
+        setScrollToHeadingId(null);
     };
 
     // Auto-save effect
@@ -361,14 +357,13 @@ function App() {
                         >
                             <CollectionsBrowser
                                 collections={collections}
-                                selectedCollection={selectedCollection}
-                                onCollectionSelect={handleCollectionSelect}
-                                onCollectionCreate={handleCollectionCreate}
-                                onCollectionDelete={handleCollectionDelete}
                                 selectedDocument={selectedDocument}
                                 onDocumentSelect={handleDocumentSelect}
                                 onDocumentCreate={handleDocumentCreate}
                                 onDocumentDelete={handleDocumentDelete}
+                                onCollectionCreate={handleCollectionCreate}
+                                onCollectionDelete={handleCollectionDelete}
+                                onHeadingClick={handleHeadingClick}
                             />
                         </div>
                         {/* Thin resize divider */}
@@ -394,6 +389,8 @@ function App() {
                             content={documentContent}
                             onContentChange={handleContentChange}
                             zoomLevel={zoomLevel}
+                            scrollToHeadingId={scrollToHeadingId}
+                            onHeadingScrolled={handleHeadingScrolled}
                         />
                     ) : (
                         <div className="flex flex-col items-center justify-center h-full text-gray-600 dark:text-gray-400">

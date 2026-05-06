@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, forwardRef } from "react";
+import { useEffect, useRef, useState, useCallback, forwardRef, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -8,11 +8,14 @@ import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import TurndownService from "turndown";
 import { useTheme } from "../ThemeContext";
+import { slugify } from "../utils/slugify";
 
 interface DocumentPreviewProps {
     content: string;
     zoomLevel?: number;
     onNavigateToLine?: (line: number) => void;
+    scrollToHeadingId?: string | null;
+    onHeadingScrolled?: () => void;
 }
 
 // Mermaid code block component
@@ -61,9 +64,29 @@ function MermaidDiagram({ code, theme }: { code: string; theme: 'light' | 'dark'
 }
 
 const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
-    function DocumentPreview({ content, zoomLevel = 1.0, onNavigateToLine }, ref) {
+    function DocumentPreview({ content, zoomLevel = 1.0, onNavigateToLine, scrollToHeadingId, onHeadingScrolled }, ref) {
         const previewRef = useRef<HTMLDivElement>(null);
         const combinedRef = useCombinedRefs(ref, previewRef);
+
+        // Pre-compute heading slug → line number mapping so HeadingRenderer can assign stable IDs
+        const headingSlugsByLine = useMemo(() => {
+            const result = new Map<number, string>();
+            const slugCounts = new Map<string, number>();
+            let lineNum = 0;
+            for (const line of content.split('\n')) {
+                lineNum++;
+                const match = line.match(/^(#{1,6})\s+(.+)/);
+                if (match) {
+                    const text = match[2].trim();
+                    let id = slugify(text);
+                    const count = slugCounts.get(id) ?? 0;
+                    slugCounts.set(id, count + 1);
+                    if (count > 0) id = `${id}-${count}`;
+                    result.set(lineNum, id);
+                }
+            }
+            return result;
+        }, [content]);
         const [isDragging, setIsDragging] = useState(false);
         const [startX, setStartX] = useState(0);
         const [startY, setStartY] = useState(0);
@@ -93,9 +116,10 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             // Access the line number from the node position
             const line = node?.position?.start?.line;
             const Tag = node?.tagName as keyof JSX.IntrinsicElements || 'h1'; // Default to h1 if undefined
+            const headingId = line ? headingSlugsByLine.get(line) : undefined;
 
             return (
-                <Tag className="group relative flex items-center">
+                <Tag id={headingId} className="group relative flex items-center">
                     <span className="flex-1">{children}</span>
                     {line && onNavigateToLine && (
                         <button
@@ -229,6 +253,20 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             document.addEventListener("click", handleClick);
             return () => document.removeEventListener("click", handleClick);
         }, []);
+
+        // Scroll to heading when scrollToHeadingId changes
+        useEffect(() => {
+            if (!scrollToHeadingId) return;
+            const id = scrollToHeadingId;
+            requestAnimationFrame(() => {
+                if (!previewRef.current) return;
+                const el = previewRef.current.querySelector(`#${CSS.escape(id)}`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    onHeadingScrolled?.();
+                }
+            });
+        }, [scrollToHeadingId, content]);
 
         const handleMouseMove = useCallback(
             (e: MouseEvent) => {
