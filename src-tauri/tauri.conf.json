@@ -8,7 +8,7 @@
     },
     "package": {
         "productName": "MarkdownUI",
-        "version": "1.0.10"
+        "version": "1.0.12"
     },
     "tauri": {
         "allowlist": {
@@ -51,7 +51,12 @@
                 "icons/128x128@2x.png",
                 "icons/icon.png",
                 "icons/icon.ico"
-            ]
+            ],
+            "windows": {
+                "nsis": {
+                    "installMode": "perMachine"
+                }
+            }
         },
         "security": {
             "csp": null

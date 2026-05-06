@@ -1,0 +1,9 @@
+{
+  // MD048: Code fence style - allow backticks; ::: is not a recognized fence and won't be flagged
+  "MD048": {
+    "style": "backtick"
+  },
+  "MD013": {
+    "line_length": 1000
+  }
+}

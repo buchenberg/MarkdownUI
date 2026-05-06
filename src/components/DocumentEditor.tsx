@@ -3,17 +3,22 @@ import Editor from "@monaco-editor/react";
 import DocumentPreview from "./DocumentPreview";
 import ResizableSplit from "./ResizableSplit";
 import { useTheme } from "../ThemeContext";
+import { slugify } from "../utils/slugify";
 
 interface DocumentEditorProps {
     content: string;
     onContentChange: (content: string) => void;
     zoomLevel: number;
+    scrollToHeadingId?: string | null;
+    onHeadingScrolled?: () => void;
 }
 
 export default function DocumentEditor({
     content,
     onContentChange,
     zoomLevel,
+    scrollToHeadingId,
+    onHeadingScrolled,
 }: DocumentEditorProps) {
     const previewRef = useRef<HTMLDivElement>(null);
     const { theme } = useTheme();
@@ -61,6 +66,28 @@ export default function DocumentEditor({
             editorRef.current.layout();
         }
     }, [zoomLevel]);
+
+    // Scroll Monaco editor to the heading matching scrollToHeadingId
+    useEffect(() => {
+        if (!scrollToHeadingId || !editorRef.current) return;
+        const counts = new Map<string, number>();
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+            const match = lines[i].match(/^(#{1,6})\s+(.+)/);
+            if (!match) continue;
+            const text = match[2].trim();
+            let id = slugify(text);
+            const count = counts.get(id) ?? 0;
+            counts.set(id, count + 1);
+            if (count > 0) id = `${id}-${count}`;
+            if (id === scrollToHeadingId) {
+                const lineTop = editorRef.current.getTopForLineNumber(i + 1);
+                editorRef.current.setScrollTop(lineTop);
+                editorRef.current.setPosition({ lineNumber: i + 1, column: 1 });
+                break;
+            }
+        }
+    }, [scrollToHeadingId, content]);
 
     // Navigate to specific line
     const handleNavigateToLine = (line: number) => {
@@ -117,6 +144,8 @@ export default function DocumentEditor({
                                     zoomLevel={zoomLevel}
                                     ref={previewRef}
                                     onNavigateToLine={handleNavigateToLine}
+                                    scrollToHeadingId={scrollToHeadingId}
+                                    onHeadingScrolled={onHeadingScrolled}
                                 />
                             </div>
                         </div>
