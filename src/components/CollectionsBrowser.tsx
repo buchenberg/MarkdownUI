@@ -567,7 +567,7 @@ export default function CollectionsBrowser({
                                                         {headings.map((heading, i) => (
                                                             <div
                                                                 key={i}
-                                                                style={{ paddingLeft: `${28 + (heading.level - 1) * 10}px` }}
+                                                                style={{ paddingLeft: `${38 + (heading.level - 1) * 10}px` }}
                                                                 className="flex items-center py-0.5 pr-2 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700"
                                                                 onClick={() => onHeadingClick(doc, heading.id)}
                                                             >
