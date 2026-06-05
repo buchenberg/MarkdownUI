@@ -31,6 +31,15 @@ function App() {
         return saved ? saved === "true" : false;
     });
 
+    // MCP server state
+    const [mcpRunning, setMcpRunning] = useState(false);
+    const [mcpPending, setMcpPending] = useState(false);
+
+    useEffect(() => {
+        // Check initial MCP server status on mount
+        api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
+    }, []);
+
     useEffect(() => {
         fetchCollections();
     }, []);
@@ -229,6 +238,25 @@ function App() {
     const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.3));
     const handleResetZoom = () => setZoomLevel(1.0);
 
+    // MCP server toggle
+    const handleMcpToggle = async () => {
+        setMcpPending(true);
+        try {
+            if (mcpRunning) {
+                await api.stopMcpServer();
+                setMcpRunning(false);
+            } else {
+                await api.startMcpServer();
+                setMcpRunning(true);
+            }
+        } catch (error) {
+            console.error("MCP server toggle failed:", error);
+            alert(`MCP server error: ${error}`);
+        } finally {
+            setMcpPending(false);
+        }
+    };
+
     // Export handlers
     const handleExportMd = async () => {
         try {
@@ -341,6 +369,31 @@ function App() {
                 ) : (
                     <div className="flex-1" />
                 )}
+
+                {/* MCP Server Toggle */}
+                <button
+                    onClick={handleMcpToggle}
+                    disabled={mcpPending}
+                    title={mcpRunning ? "MCP server running on :3333 — click to stop" : "Start MCP server on :3333"}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border transition-colors duration-150 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        mcpRunning
+                            ? theme === 'dark'
+                                ? 'border-green-600 text-green-400 hover:bg-green-900/30'
+                                : 'border-green-500 text-green-700 hover:bg-green-50'
+                            : theme === 'dark'
+                                ? 'border-gray-600 text-gray-400 hover:bg-gray-700'
+                                : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                    }`}
+                >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        mcpPending
+                            ? 'bg-yellow-400 animate-pulse'
+                            : mcpRunning
+                                ? 'bg-green-500'
+                                : 'bg-gray-400'
+                    }`} />
+                    MCP
+                </button>
 
                 {/* Theme Toggle */}
                 <ThemeToggle />

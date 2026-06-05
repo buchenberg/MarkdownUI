@@ -119,6 +119,22 @@ export async function exportMarkdown(
 // Document Export API
 export type ExportFormat = "html" | "pdf";
 
+// ── MCP Server API ────────────────────────────────────────────────────────────
+
+export async function startMcpServer(): Promise<void> {
+    return invoke<void>("start_mcp_server");
+}
+
+export async function stopMcpServer(): Promise<void> {
+    return invoke<void>("stop_mcp_server");
+}
+
+export async function getMcpServerStatus(): Promise<boolean> {
+    return invoke<boolean>("get_mcp_server_status");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Check if PDF export is available (Chrome installed)
 export async function checkPdfAvailable(): Promise<boolean> {
     try {
