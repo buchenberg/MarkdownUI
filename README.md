@@ -7,7 +7,7 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
 - **Markdown Editor**: Full-featured Monaco editor with custom dark blue theme
 - **Live Preview**: Real-time markdown rendering with support for:
   - GitHub Flavored Markdown (tables, task lists, strikethrough)
-  - Embedded Mermaid diagrams with theme support (both ````mermaid` and `:::mermaid` syntax)
+  - Embedded Mermaid diagrams with theme support (both ` ```mermaid ` and `:::mermaid` syntax)
   - Code blocks with syntax highlighting (Prism)
 - **Collections**: Organize documents into collections
 - **Auto-save**: Optional automatic saving of document content
@@ -15,6 +15,7 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
   - Markdown (.md) - Raw markdown file
   - HTML - Styled document with embedded diagrams
   - PDF - Print-ready document (requires Chrome/Chromium)
+- **MCP Server**: Embedded [Model Context Protocol](https://modelcontextprotocol.io/) server — expose your documents and collections to any AI agent over HTTP
 - **Zoom Controls**: Adjust preview zoom level (30% - 300%)
 - **Dark Mode**: Full dark/light theme support across all UI elements
 - **Unified Header**: Clean single-header layout with all controls
@@ -67,6 +68,83 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 
 7. **Export**: Click the Export button to save as Markdown, HTML, or PDF
 8. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
+9. **MCP Server**: Click the **MCP** button in the header to start the agent integration server (see [MCP Server](#mcp-server) below)
+
+## MCP Server
+
+MarkdownUI includes an embedded [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that lets AI agents read and write your collections and documents directly. No external process or Node.js runtime required — the server runs inside the app.
+
+### Starting the Server
+
+Click the **MCP** button in the top-right header:
+
+| Indicator | Meaning |
+|-----------|---------|
+| ⚫ Grey dot | Server stopped |
+| 🟢 Green dot | Server running on `http://localhost:3333/mcp` |
+| 🟡 Yellow pulse | Starting / stopping |
+
+### Available Tools
+
+Once running, agents have access to 11 tools:
+
+| Tool | Description |
+|------|-------------|
+| `list_collections` | List all collections |
+| `get_collection` | Get a collection by ID |
+| `create_collection` | Create a new collection |
+| `update_collection` | Rename / update a collection |
+| `delete_collection` | Delete a collection and all its documents |
+| `list_documents` | List documents in a collection (metadata only) |
+| `get_document` | Get a document with full markdown content |
+| `create_document` | Create a new document in a collection |
+| `update_document` | Update a document's name and/or content |
+| `delete_document` | Delete a document |
+| `search_documents` | Search documents by name or content across all collections |
+
+### Agent Configuration
+
+#### Hermes Agent
+
+Add to `~/.hermes/config.yaml` and restart Hermes:
+
+```yaml
+mcp_servers:
+  markdownui:
+    url: "http://localhost:3333/mcp"
+    transport: "http"
+```
+
+#### VS Code (Copilot / Continue / etc.)
+
+`.vscode/mcp.json` is already included in the repo. Add an entry:
+
+```json
+{
+  "servers": {
+    "markdownui": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-server/server.js"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+> **Note:** The `mcp-server/` directory contains a Node.js stdio implementation for clients that don't support HTTP transport. Run `npm install` inside `mcp-server/` before using it.
+
+#### Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "markdownui": {
+      "command": "node",
+      "args": ["C:/Code/Personal/MarkdownUI/mcp-server/server.js"]
+    }
+  }
+}
+```
 
 ## Development
 
@@ -103,6 +181,7 @@ npm run tauri build
 - **Diagrams**: Mermaid.js
 - **Backend**: Tauri 1.5, Rust
 - **Database**: SQLite (rusqlite)
+- **MCP Server**: axum 0.7, tower-http 0.5 (HTTP transport, JSON-RPC 2.0)
 - **PDF Export**: chromiumoxide (headless Chrome)
 
 ## Architecture
@@ -119,9 +198,13 @@ MarkdownUI/
 │   └── components/         # React components
 ├── src-tauri/              # Backend (Rust/Tauri)
 │   └── src/
-│       ├── main.rs         # Tauri commands
+│       ├── main.rs         # Tauri commands and app setup
 │       ├── database.rs     # SQLite operations
-│       └── converter.rs    # Export conversion
+│       ├── converter.rs    # Export conversion
+│       └── mcp_server.rs   # Embedded axum MCP HTTP server
+├── mcp-server/             # Node.js stdio MCP server (alternative transport)
+│   ├── server.js           # MCP server implementation
+│   └── README.md           # Setup instructions
 └── docs/                   # Documentation
     └── ARCHITECTURE.md     # Detailed architecture guide
 ```
@@ -129,11 +212,12 @@ MarkdownUI/
 ## Future Ideas
 
 - [ ] **Image Support**: Embed and manage images within documents
-- [ ] **Search**: Full-text search across all documents
 - [ ] **Tags**: Tag documents for better organization
 - [ ] **Synchronized Scrolling**: Sync scroll position between editor and preview
 - [ ] **Custom CSS**: User-defined styles for preview
 - [ ] **DOCX Export**: Export to Microsoft Word format
+- [ ] **MCP: Configurable Port**: Allow the MCP server port to be set in preferences
+- [ ] **MCP: Auto-start**: Option to start the MCP server automatically on app launch
 
 ## License
 
