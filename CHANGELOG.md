@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/buchenberg/MarkdownUI/compare/v1.3.0...v1.4.0) (2026-06-09)
+
+### Features
+
+* nested folders in collections ([#9](https://github.com/buchenberg/MarkdownUI/issues/9)) ([95fbaf3](https://github.com/buchenberg/MarkdownUI/commit/95fbaf30ff5917a1706ed5dcfdaafc5bd401c7bc))
+
 ## [1.3.0](https://github.com/buchenberg/MarkdownUI/compare/v1.2.2...v1.3.0) (2026-06-09)
 
 ### Features
