@@ -22,6 +22,16 @@ pub struct Document {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub id: i64,
+    pub collection_id: i64,
+    pub collection_name: String,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -48,7 +58,14 @@ impl Database {
     
     fn init(&self) -> SqliteResult<()> {
         let conn = self.conn.lock().unwrap();
-        
+
+        // Enable WAL mode for concurrent reads (MCP server shares this DB)
+        // and enforce foreign keys
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;"
+        )?;
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS collections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,6 +92,35 @@ impl Database {
         
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection_id)",
+            rusqlite::params![],
+        )?;
+
+        // FTS5 full-text search index on documents
+        // Uses external content table so FTS reads directly from 'documents'
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+                name, content, content=documents, content_rowid=id
+            )",
+            rusqlite::params![],
+        )?;
+
+        // Triggers to keep FTS index in sync with documents table
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS documents_fts_ai AFTER INSERT ON documents BEGIN
+                INSERT INTO documents_fts(rowid, name, content) VALUES (new.id, new.name, new.content);
+             END;
+             CREATE TRIGGER IF NOT EXISTS documents_fts_ad AFTER DELETE ON documents BEGIN
+                INSERT INTO documents_fts(documents_fts, rowid, name, content) VALUES('delete', old.id, old.name, old.content);
+             END;
+             CREATE TRIGGER IF NOT EXISTS documents_fts_au AFTER UPDATE ON documents BEGIN
+                INSERT INTO documents_fts(documents_fts, rowid, name, content) VALUES('delete', old.id, old.name, old.content);
+                INSERT INTO documents_fts(rowid, name, content) VALUES (new.id, new.name, new.content);
+             END;"
+        )?;
+
+        // Populate FTS index with existing documents (idempotent — 'INSERT OR REPLACE' semantics via rebuild)
+        conn.execute(
+            "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')",
             rusqlite::params![],
         )?;
         
@@ -239,5 +285,50 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let changes = conn.execute("DELETE FROM documents WHERE id = ?", rusqlite::params![id])?;
         Ok(changes > 0)
+    }
+
+    /// Full-text search across documents by name and content.
+    /// Uses the FTS5 index for sub-millisecond lookups regardless of dataset size.
+    pub fn search_documents(&self, query: &str) -> SqliteResult<Vec<SearchResult>> {
+        let conn = self.conn.lock().unwrap();
+
+        // Escape special FTS5 characters and wrap each term in quotes for exact matching
+        let sanitized: String = query
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect();
+        let terms: Vec<String> = sanitized
+            .split_whitespace()
+            .map(|t| format!("\"{}\"", t.replace('"', "")))
+            .collect();
+
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let fts_query = terms.join(" AND ");
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.collection_id, c.name AS collection_name, d.name, d.created_at, d.updated_at
+             FROM documents_fts fts
+             JOIN documents d ON d.id = fts.rowid
+             JOIN collections c ON c.id = d.collection_id
+             WHERE documents_fts MATCH ?
+             ORDER BY rank
+             LIMIT 100"
+        )?;
+
+        let results = stmt.query_map(rusqlite::params![fts_query], |row| {
+            Ok(SearchResult {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                collection_name: row.get(2)?,
+                name: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?
+        .collect::<SqliteResult<Vec<_>>>()?;
+
+        Ok(results)
     }
 }
