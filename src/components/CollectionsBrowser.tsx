@@ -367,25 +367,6 @@ export default function CollectionsBrowser({
                 disabled={isUploading}
             />
 
-            {/* Toolbar */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Collections
-                </span>
-                <button
-                    onClick={() => setShowNewCollectionInput((v) => !v)}
-                    title="New Collection"
-                    className="p-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                >
-                    {/* Folder + icon */}
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                        <line x1="12" y1="11" x2="12" y2="17" />
-                        <line x1="9" y1="14" x2="15" y2="14" />
-                    </svg>
-                </button>
-            </div>
-
             {/* Inline new-collection form */}
             {showNewCollectionInput && (
                 <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex flex-col gap-1.5 flex-shrink-0">
@@ -461,7 +442,7 @@ export default function CollectionsBrowser({
                         <div key={collection.id}>
                             {/* ── Collection row ── */}
                             <div
-                                className={`group flex items-center gap-0.5 px-1 py-0.5 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700 ${
+                                className={`group flex items-center gap-0.5 pl-3 pr-1 py-0.5 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700 ${
                                     mcpAnimatingIds?.has(collection.id) ? "mcp-animate-pulse-collection" : ""
                                 }`}
                                 onClick={() => toggleCollection(collection.id)}
@@ -742,6 +723,19 @@ export default function CollectionsBrowser({
                         </div>
                     );
                 })}
+
+                {/* New Collection button */}
+                <button
+                    onClick={() => setShowNewCollectionInput((v) => !v)}
+                    className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        <line x1="12" y1="11" x2="12" y2="17" />
+                        <line x1="9" y1="14" x2="15" y2="14" />
+                    </svg>
+                    New Collection
+                </button>
             </div>
         </div>
     );
