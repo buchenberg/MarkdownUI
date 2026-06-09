@@ -52,7 +52,7 @@ function App() {
             setHasChanges(false);
             setHasNameChanges(false);
             setMcpFlash(true);
-            setTimeout(() => setMcpFlash(false), 1500);
+            setTimeout(() => setMcpFlash(false), 2200);
         });
     }, [animatingIds, selectedDocument?.id, mcpRunning]);
 

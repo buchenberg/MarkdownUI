@@ -15,14 +15,13 @@ export interface McpEventDetail {
     name: string;
 }
 
-const ANIMATION_DURATION_MS = 2000;
+const ANIMATION_DURATION_MS = 3000;
 
 export function useMcpEvents(enabled: boolean) {
     const [animatingIds, setAnimatingIds] = useState<Set<number>>(new Set());
     const [lastEvents, setLastEvents] = useState<McpEventDetail[]>([]);
     const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
     const eventsWindowRef = useRef<McpEventDetail[]>([]);
-    const eventsCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Clear old events from the window (keep last 3 seconds)
     const pruneEvents = useCallback(() => {
@@ -88,12 +87,8 @@ export function useMcpEvents(enabled: boolean) {
 
         return () => {
             unlisten?.();
-            // Clean up all timers
             timersRef.current.forEach((t) => clearTimeout(t));
             timersRef.current.clear();
-            if (eventsCleanupRef.current) {
-                clearTimeout(eventsCleanupRef.current);
-            }
         };
     }, [enabled, pruneEvents]);
 

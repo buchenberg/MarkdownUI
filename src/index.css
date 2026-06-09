@@ -358,13 +358,13 @@ code {
 /* ── Tree item pulse: accent background that fades out ─────────────────── */
 
 @keyframes mcp-pulse {
-    0%   { background-color: rgba(59, 130, 246, 0.25); }
-    60%  { background-color: rgba(59, 130, 246, 0.08); }
+    0%   { background-color: rgba(59, 130, 246, 0.35); }
+    40%  { background-color: rgba(59, 130, 246, 0.15); }
     100% { background-color: transparent; }
 }
 
 .mcp-animate-pulse {
-    animation: mcp-pulse 2s ease-out forwards;
+    animation: mcp-pulse 3s ease-out forwards;
 }
 
 .dark .mcp-animate-pulse {
@@ -372,21 +372,21 @@ code {
 }
 
 @keyframes mcp-pulse-dark {
-    0%   { background-color: rgba(96, 165, 250, 0.20); }
-    60%  { background-color: rgba(96, 165, 250, 0.06); }
+    0%   { background-color: rgba(96, 165, 250, 0.30); }
+    40%  { background-color: rgba(96, 165, 250, 0.12); }
     100% { background-color: transparent; }
 }
 
 /* ── Collection-level pulse (yellow, subtler) ──────────────────────────── */
 
 @keyframes mcp-pulse-collection {
-    0%   { background-color: rgba(234, 179, 8, 0.15); }
-    60%  { background-color: rgba(234, 179, 8, 0.05); }
+    0%   { background-color: rgba(234, 179, 8, 0.25); }
+    40%  { background-color: rgba(234, 179, 8, 0.10); }
     100% { background-color: transparent; }
 }
 
 .mcp-animate-pulse-collection {
-    animation: mcp-pulse-collection 2s ease-out forwards;
+    animation: mcp-pulse-collection 3s ease-out forwards;
 }
 
 .dark .mcp-animate-pulse-collection {
@@ -394,8 +394,8 @@ code {
 }
 
 @keyframes mcp-pulse-collection-dark {
-    0%   { background-color: rgba(250, 204, 21, 0.12); }
-    60%  { background-color: rgba(250, 204, 21, 0.04); }
+    0%   { background-color: rgba(250, 204, 21, 0.25); }
+    40%  { background-color: rgba(250, 204, 21, 0.10); }
     100% { background-color: transparent; }
 }
 
@@ -427,7 +427,7 @@ code {
         rgba(59, 130, 246, 0.12) 60%,
         transparent 100%
     );
-    animation: mcp-shimmer 1.2s ease-in-out forwards;
+    animation: mcp-shimmer 2s ease-in-out forwards;
 }
 
 .dark .mcp-shimmer-overlay {

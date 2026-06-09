@@ -306,6 +306,13 @@ async fn handle_tool_call(state: Arc<McpState>, id: Option<Value>, params: Value
 fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
+    // Helper: emit an event through the main window
+    let emit_event = |event: McpEvent| {
+        if let Some(window) = state.app_handle.get_window("main") {
+            let _ = window.emit("mcp-operation", &event);
+        }
+    };
+
     match name {
         "list_collections" => {
             let cols = db.get_all_collections().map_err(|e| e.to_string())?;
@@ -325,7 +332,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
             let description = args.get("description").and_then(Value::as_str).map(String::from);
             let col = db.create_collection(name, description).map_err(|e| e.to_string())?;
             let result = serde_json::to_string_pretty(&col).unwrap();
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "create_collection".into(),
                 id: col.id,
                 collection_id: None,
@@ -340,7 +347,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
             let description = args.get("description").and_then(Value::as_str).map(String::from);
             let col = db.update_collection(id, name, description).map_err(|e| e.to_string())?;
             let result = serde_json::to_string_pretty(&col).unwrap();
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "update_collection".into(),
                 id: col.id,
                 collection_id: None,
@@ -357,7 +364,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
                 .map(|c| c.name)
                 .unwrap_or_default();
             let ok = db.delete_collection(id).map_err(|e| e.to_string())?;
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "delete_collection".into(),
                 id,
                 collection_id: None,
@@ -401,7 +408,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
                 .create_document(collection_id, name, content)
                 .map_err(|e| e.to_string())?;
             let result = serde_json::to_string_pretty(&doc).unwrap();
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "create_document".into(),
                 id: doc.id,
                 collection_id: Some(doc.collection_id),
@@ -416,7 +423,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
             let content = get_str(&args, "content")?;
             let doc = db.update_document(id, name, content).map_err(|e| e.to_string())?;
             let result = serde_json::to_string_pretty(&doc).unwrap();
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "update_document".into(),
                 id: doc.id,
                 collection_id: Some(doc.collection_id),
@@ -432,7 +439,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
             let collection_id = doc_info.as_ref().map(|d| d.collection_id);
             let name = doc_info.map(|d| d.name).unwrap_or_default();
             let ok = db.delete_document(id).map_err(|e| e.to_string())?;
-            let _ = state.app_handle.emit_all("mcp-operation", McpEvent {
+            emit_event(McpEvent {
                 operation: "delete_document".into(),
                 id,
                 collection_id,
