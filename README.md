@@ -172,6 +172,48 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### Releases
+
+Releases are fully automated via [semantic-release](https://semantic-release.gitbook.io/). Every push to `main` triggers versioning, changelog generation, and a GitHub Release.
+
+#### How It Works
+
+```
+PR merged to main
+       │
+       ▼
+  semantic-release
+       │
+       ├─ Reads commits since last tag
+       ├─ Determines bump from commit types (see below)
+       ├─ Generates CHANGELOG.md
+       ├─ Bumps version in package.json, Cargo.toml, tauri.conf.json
+       ├─ Creates git tag (vX.Y.Z)
+       └─ Creates GitHub Release with changelog
+                │
+                ▼
+       GitHub Actions (on v* tag)
+                │
+                └─ Builds macOS / Windows / Linux binaries
+```
+
+#### Commit Convention
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/). The commit type determines the version bump:
+
+| Prefix | Bump | Example |
+|--------|------|---------|
+| `feat:` | minor | `feat: add FTS5 full-text search` |
+| `fix:` | patch | `fix: sidebar collapse animation` |
+| `docs:` | patch | `docs: update MCP config section` |
+| `refactor:` | patch | `refactor: extract search logic` |
+| `perf:` | patch | `perf: optimize document list query` |
+| `chore:` | — *(no release)* | `chore: update dependencies` |
+
+Breaking changes use `feat!:` or `fix!:` and trigger a major bump. A `BREAKING CHANGE:` footer in the commit body also works.
+
+You no longer need to run `npm run release:*` or manually bump versions — semantic-release handles the entire pipeline.
+
 ## Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS
