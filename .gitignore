@@ -20,3 +20,4 @@ Thumbs.db
 # Agent configuration
 .qwen/
 .claude/
+.hermes/plans/

@@ -10,6 +10,9 @@
 //!   create_document, update_document, delete_document,
 //!   create_collection, update_collection, delete_collection,
 //!   search_documents
+//!
+//! After each write operation, a Tauri event (`mcp-operation`) is emitted
+//! so the frontend can animate the changes in real time.
 
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +25,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::database::Database;
@@ -29,6 +33,12 @@ use crate::database::Database;
 // ── Shared state ─────────────────────────────────────────────────────────────
 
 pub type DbArc = Arc<Mutex<Database>>;
+
+/// State shared between the MCP HTTP server and the Tauri event system.
+pub struct McpState {
+    pub db: DbArc,
+    pub app_handle: AppHandle,
+}
 
 // ── JSON-RPC 2.0 wire types ───────────────────────────────────────────────────
 
@@ -72,7 +82,9 @@ impl JsonRpcResponse {
 
 // ── Router ───────────────────────────────────────────────────────────────────
 
-pub fn build_router(db: DbArc) -> Router {
+pub fn build_router(db: DbArc, app_handle: AppHandle) -> Router {
+    let state = Arc::new(McpState { db, app_handle });
+
     let cors = CorsLayer::new()
         .allow_methods([Method::POST, Method::OPTIONS])
         .allow_headers(Any)
@@ -81,13 +93,13 @@ pub fn build_router(db: DbArc) -> Router {
     Router::new()
         .route("/mcp", post(handle_mcp))
         .layer(cors)
-        .with_state(db)
+        .with_state(state)
 }
 
 // ── Request handler ───────────────────────────────────────────────────────────
 
 async fn handle_mcp(
-    State(db): State<DbArc>,
+    State(state): State<Arc<McpState>>,
     _headers: HeaderMap,
     Json(req): Json<JsonRpcRequest>,
 ) -> Response {
@@ -99,12 +111,12 @@ async fn handle_mcp(
             .into_response();
     }
 
-    let resp = dispatch(db, req.id, &req.method, req.params).await;
+    let resp = dispatch(state, req.id, &req.method, req.params).await;
     Json(resp).into_response()
 }
 
 async fn dispatch(
-    db: DbArc,
+    state: Arc<McpState>,
     id: Option<Value>,
     method: &str,
     params: Option<Value>,
@@ -132,7 +144,7 @@ async fn dispatch(
 
         "tools/list" => JsonRpcResponse::ok(id, json!({ "tools": tools_manifest() })),
 
-        "tools/call" => handle_tool_call(db, id, p).await,
+        "tools/call" => handle_tool_call(state, id, p).await,
 
         _ => JsonRpcResponse::err(id, -32601, format!("Method not found: {method}")),
     }
@@ -255,16 +267,29 @@ fn tools_manifest() -> Value {
     ])
 }
 
+// ── MCP event payload ──────────────────────────────────────────────────────
+
+/// Emitted to the frontend via `app_handle.emit_all("mcp-operation", …)`
+/// after each write operation so the UI can animate the change.
+#[derive(Debug, Serialize, Clone)]
+struct McpEvent {
+    operation: String,
+    id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_id: Option<i64>,
+    name: String,
+}
+
 // ── Tool dispatch ─────────────────────────────────────────────────────────────
 
-async fn handle_tool_call(db: DbArc, id: Option<Value>, params: Value) -> JsonRpcResponse {
+async fn handle_tool_call(state: Arc<McpState>, id: Option<Value>, params: Value) -> JsonRpcResponse {
     let name = match params.get("name").and_then(Value::as_str) {
         Some(n) => n.to_owned(),
         None => return JsonRpcResponse::err(id, -32602, "Missing tool name"),
     };
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-    let result = tokio::task::spawn_blocking(move || run_tool(db, &name, args))
+    let result = tokio::task::spawn_blocking(move || run_tool(state, &name, args))
         .await
         .unwrap_or_else(|e| Err(format!("Task panicked: {e}")));
 
@@ -278,8 +303,15 @@ async fn handle_tool_call(db: DbArc, id: Option<Value>, params: Value) -> JsonRp
 }
 
 /// Runs synchronously (called via spawn_blocking so it won't block the async runtime).
-fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
-    let db = db.lock().map_err(|e| e.to_string())?;
+fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Helper: emit an event through the main window
+    let emit_event = |event: McpEvent| {
+        if let Some(window) = state.app_handle.get_window("main") {
+            let _ = window.emit("mcp-operation", &event);
+        }
+    };
 
     match name {
         "list_collections" => {
@@ -299,7 +331,14 @@ fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
             let name = get_str(&args, "name")?;
             let description = args.get("description").and_then(Value::as_str).map(String::from);
             let col = db.create_collection(name, description).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&col).unwrap())
+            let result = serde_json::to_string_pretty(&col).unwrap();
+            emit_event(McpEvent {
+                operation: "create_collection".into(),
+                id: col.id,
+                collection_id: None,
+                name: col.name.clone(),
+            });
+            Ok(result)
         }
 
         "update_collection" => {
@@ -307,12 +346,30 @@ fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
             let name = get_str(&args, "name")?;
             let description = args.get("description").and_then(Value::as_str).map(String::from);
             let col = db.update_collection(id, name, description).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&col).unwrap())
+            let result = serde_json::to_string_pretty(&col).unwrap();
+            emit_event(McpEvent {
+                operation: "update_collection".into(),
+                id: col.id,
+                collection_id: None,
+                name: col.name.clone(),
+            });
+            Ok(result)
         }
 
         "delete_collection" => {
             let id = get_i64(&args, "id")?;
+            // Capture name before deletion
+            let name = db.get_collection(id)
+                .map_err(|e| e.to_string())?
+                .map(|c| c.name)
+                .unwrap_or_default();
             let ok = db.delete_collection(id).map_err(|e| e.to_string())?;
+            emit_event(McpEvent {
+                operation: "delete_collection".into(),
+                id,
+                collection_id: None,
+                name,
+            });
             Ok(format!("{{\"deleted\": {ok}}}"))
         }
 
@@ -350,7 +407,14 @@ fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
             let doc = db
                 .create_document(collection_id, name, content)
                 .map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&doc).unwrap())
+            let result = serde_json::to_string_pretty(&doc).unwrap();
+            emit_event(McpEvent {
+                operation: "create_document".into(),
+                id: doc.id,
+                collection_id: Some(doc.collection_id),
+                name: doc.name.clone(),
+            });
+            Ok(result)
         }
 
         "update_document" => {
@@ -358,12 +422,29 @@ fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
             let name = get_str(&args, "name")?;
             let content = get_str(&args, "content")?;
             let doc = db.update_document(id, name, content).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&doc).unwrap())
+            let result = serde_json::to_string_pretty(&doc).unwrap();
+            emit_event(McpEvent {
+                operation: "update_document".into(),
+                id: doc.id,
+                collection_id: Some(doc.collection_id),
+                name: doc.name.clone(),
+            });
+            Ok(result)
         }
 
         "delete_document" => {
             let id = get_i64(&args, "id")?;
+            // Capture collection_id and name before deletion
+            let doc_info = db.get_document(id).map_err(|e| e.to_string())?;
+            let collection_id = doc_info.as_ref().map(|d| d.collection_id);
+            let name = doc_info.map(|d| d.name).unwrap_or_default();
             let ok = db.delete_document(id).map_err(|e| e.to_string())?;
+            emit_event(McpEvent {
+                operation: "delete_document".into(),
+                id,
+                collection_id,
+                name,
+            });
             Ok(format!("{{\"deleted\": {ok}}}"))
         }
 

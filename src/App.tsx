@@ -4,6 +4,7 @@ import DocumentEditor from "./components/DocumentEditor";
 import ThemeToggle from "./components/ThemeToggle";
 import ZoomControls from "./components/ZoomControls";
 import { useTheme } from "./ThemeContext";
+import { useMcpEvents } from "./hooks/useMcpEvents";
 import * as api from "./api";
 import type { Collection, Document, ExportFormat } from "./api";
 
@@ -34,6 +35,26 @@ function App() {
     // MCP server state
     const [mcpRunning, setMcpRunning] = useState(false);
     const [mcpPending, setMcpPending] = useState(false);
+
+    // MCP live update animations
+    const [mcpFlash, setMcpFlash] = useState(false);
+    const { animatingIds, lastEvents } = useMcpEvents(mcpRunning);
+
+    // When an MCP event touches the currently open document, refresh it
+    useEffect(() => {
+        if (!selectedDocument || !mcpRunning) return;
+        if (!animatingIds.has(selectedDocument.id)) return;
+
+        api.getDocument(selectedDocument.id).then((doc) => {
+            if (!doc) return;
+            setDocumentContent(doc.content);
+            setDocumentName(doc.name);
+            setHasChanges(false);
+            setHasNameChanges(false);
+            setMcpFlash(true);
+            setTimeout(() => setMcpFlash(false), 2200);
+        });
+    }, [animatingIds, selectedDocument?.id, mcpRunning]);
 
     useEffect(() => {
         // Check initial MCP server status on mount
@@ -417,6 +438,8 @@ function App() {
                                 onCollectionCreate={handleCollectionCreate}
                                 onCollectionDelete={handleCollectionDelete}
                                 onHeadingClick={handleHeadingClick}
+                                mcpAnimatingIds={animatingIds}
+                                lastMcpEvents={lastEvents}
                             />
                         </div>
                         {/* Thin resize divider */}
@@ -444,6 +467,7 @@ function App() {
                             zoomLevel={zoomLevel}
                             scrollToHeadingId={scrollToHeadingId}
                             onHeadingScrolled={handleHeadingScrolled}
+                            mcpFlash={mcpFlash}
                         />
                     ) : (
                         <div className="flex flex-col items-center justify-center h-full text-gray-600 dark:text-gray-400">

@@ -110,6 +110,7 @@ fn check_pdf_available() -> Result<bool, String> {
 
 #[tauri::command]
 async fn start_mcp_server(
+    app_handle: tauri::AppHandle,
     mcp_state: State<'_, McpServerState>,
     db_arc: State<'_, DbArc>,
 ) -> Result<(), String> {
@@ -121,7 +122,7 @@ async fn start_mcp_server(
         }
     } // guard dropped here
 
-    let router = mcp_server::build_router(Arc::clone(&db_arc));
+    let router = mcp_server::build_router(Arc::clone(&db_arc), app_handle);
 
     // Async bind happens with no mutex held
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3333")
