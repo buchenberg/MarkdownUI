@@ -1,5 +1,10 @@
 const fs = require('fs');
-const v = JSON.parse(process.env.nextRelease).version;
+const v = process.argv[2];
+
+if (!v) {
+  console.error('Error: version argument required');
+  process.exit(1);
+}
 
 // Update Cargo.toml
 let cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
