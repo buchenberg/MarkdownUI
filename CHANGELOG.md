@@ -4,6 +4,23 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/buchenberg/MarkdownUI/compare/v1.1.0...v1.2.0) (2026-06-09)
+
+### Features
+
+* add semantic-release for automated versioning, changelogs, and releases ([a18721e](https://github.com/buchenberg/MarkdownUI/commit/a18721e50dc0aa17540361ad8902a7cda4c1245a))
+
+### Bug Fixes
+
+* parse nextRelease JSON in semantic-release exec plugin ([42160ea](https://github.com/buchenberg/MarkdownUI/commit/42160ea85f11b2fe3fdb571a2845198abbf977fb))
+* pass nextRelease.version as CLI arg instead of env var ([1d8a0e9](https://github.com/buchenberg/MarkdownUI/commit/1d8a0e9a592b93288057e44b4659583102a8e805))
+* rename sync-version to .cjs (package.json has type:module) ([be5c970](https://github.com/buchenberg/MarkdownUI/commit/be5c9702691501473fd056ed29a2d485ef55e0d7))
+* use script file instead of inline node -e for version sync ([6ea7c4f](https://github.com/buchenberg/MarkdownUI/commit/6ea7c4f1865eef7b7d43c2a1c06a985664317497))
+
+### Documentation
+
+* add automated release process to README ([#7](https://github.com/buchenberg/MarkdownUI/issues/7)) ([f5c1939](https://github.com/buchenberg/MarkdownUI/commit/f5c19396b7dabc79f7e2952d06a10d1b3ed7fae2))
+
 ---
 
 ## [1.1.0] — 2026-06-09
