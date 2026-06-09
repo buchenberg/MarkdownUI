@@ -54,7 +54,7 @@ export default function DocumentRow({
     const isSelected = selectedDocument?.id === doc.id;
     const headings = expanded ? parseHeadings(doc.content) : [];
 
-    const headingBase = indentBase + 16; // 1em in from document title
+    const headingBase = indentBase + 48; // ~1em past the document title (chevron + icon + gaps ≈ 35px + 13px buffer)
 
     return (
         <div>
