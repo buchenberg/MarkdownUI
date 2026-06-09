@@ -455,6 +455,58 @@ impl Database {
 
     pub fn move_folder(&self, id: i64, parent_folder_id: Option<i64>) -> SqliteResult<Folder> {
         let conn = self.conn.lock().unwrap();
+
+        // Guard 1: prevent self-parenting (moving a folder into itself)
+        if parent_folder_id == Some(id) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Cannot move a folder into itself".into(),
+            ));
+        }
+
+        // Guard 2: prevent cycles — walk up from the target parent; if we reach `id`, it's a cycle
+        if let Some(mut ancestor_id) = parent_folder_id {
+            let mut stmt = conn.prepare("SELECT parent_folder_id FROM folders WHERE id = ?")?;
+            loop {
+                let parent: Option<Option<i64>> = stmt
+                    .query_row(rusqlite::params![ancestor_id], |row| row.get(0))
+                    .optional()?;
+                match parent {
+                    Some(Some(pid)) if pid == id => {
+                        return Err(rusqlite::Error::InvalidParameterName(
+                            "Cannot move a folder into one of its descendants".into(),
+                        ));
+                    }
+                    Some(Some(pid)) => ancestor_id = pid,
+                    _ => break,
+                }
+            }
+        }
+
+        // Guard 3: if moving to a parent folder, ensure same collection
+        if let Some(pid) = parent_folder_id {
+            let target_coll: Option<i64> = conn
+                .query_row(
+                    "SELECT collection_id FROM folders WHERE id = ?",
+                    rusqlite::params![pid],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let source_coll: Option<i64> = conn
+                .query_row(
+                    "SELECT collection_id FROM folders WHERE id = ?",
+                    rusqlite::params![id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let (Some(tc), Some(sc)) = (target_coll, source_coll) {
+                if tc != sc {
+                    return Err(rusqlite::Error::InvalidParameterName(
+                        "Cannot move a folder to a different collection".into(),
+                    ));
+                }
+            }
+        }
+
         conn.execute(
             "UPDATE folders SET parent_folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             rusqlite::params![parent_folder_id, id],
