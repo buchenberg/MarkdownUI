@@ -44,7 +44,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node -e \"const fs=require('fs');const v=process.env.nextRelease.version;let c=fs.readFileSync('src-tauri/Cargo.toml','utf8');c=c.replace(/^version = \\\"[^\\\"]*\\\"/m,'version = \\\"'+v+'\\\"');fs.writeFileSync('src-tauri/Cargo.toml',c);let t=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8'));t.package.version=v;fs.writeFileSync('src-tauri/tauri.conf.json',JSON.stringify(t,null,2)+'\\n');console.log('Synced version '+v+' to Cargo.toml + tauri.conf.json')\""
+        "prepareCmd": "node -e \"const fs=require('fs');const v=JSON.parse(process.env.nextRelease).version;let c=fs.readFileSync('src-tauri/Cargo.toml','utf8');c=c.replace(/^version = \\\"[^\\\"]*\\\"/m,'version = \\\"'+v+'\\\"');fs.writeFileSync('src-tauri/Cargo.toml',c);let t=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8'));t.package.version=v;fs.writeFileSync('src-tauri/tauri.conf.json',JSON.stringify(t,null,2)+'\\n');console.log('Synced version '+v+' to Cargo.toml + tauri.conf.json')\""
       }
     ],
     [
