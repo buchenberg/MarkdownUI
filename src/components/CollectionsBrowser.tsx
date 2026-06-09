@@ -3,6 +3,7 @@ import type { Collection, Document } from "../api";
 import * as api from "../api";
 import ConfirmModal from "./ConfirmModal";
 import { slugify } from "../utils/slugify";
+import type { McpEventDetail } from "../hooks/useMcpEvents";
 
 interface CollectionsBrowserProps {
     collections: Collection[];
@@ -17,6 +18,8 @@ interface CollectionsBrowserProps {
     onCollectionCreate: (name: string, description?: string) => Promise<Collection>;
     onCollectionDelete: (collectionId: number) => Promise<void>;
     onHeadingClick: (document: Document, headingId: string) => void;
+    mcpAnimatingIds?: Set<number>;
+    lastMcpEvents?: McpEventDetail[];
 }
 
 interface Heading {
@@ -50,6 +53,8 @@ export default function CollectionsBrowser({
     onCollectionCreate,
     onCollectionDelete,
     onHeadingClick,
+    mcpAnimatingIds,
+    lastMcpEvents,
 }: CollectionsBrowserProps) {
     const [expandedCollections, setExpandedCollections] = useState<Set<number>>(new Set());
     const [documentsByCollection, setDocumentsByCollection] = useState<Map<number, Document[]>>(new Map());
@@ -146,6 +151,29 @@ export default function CollectionsBrowser({
             return next;
         });
     }, [selectedDocument]);
+
+    // ── MCP event re-fetch: refresh affected collections ────────────────────
+
+    const pendingRefreshes = useRef<Set<number>>(new Set());
+
+    useEffect(() => {
+        if (!lastMcpEvents || lastMcpEvents.length === 0) return;
+
+        for (const event of lastMcpEvents) {
+            if (event.collectionId != null) {
+                pendingRefreshes.current.add(event.collectionId);
+            }
+        }
+
+        const timer = setTimeout(() => {
+            for (const cid of pendingRefreshes.current) {
+                fetchDocumentsForCollection(cid);
+            }
+            pendingRefreshes.current.clear();
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [lastMcpEvents]);
 
     // ── Collection CRUD ──────────────────────────────────────────────────────
 
@@ -392,7 +420,9 @@ export default function CollectionsBrowser({
                         <div key={collection.id}>
                             {/* ── Collection row ── */}
                             <div
-                                className="group flex items-center gap-0.5 px-1 py-0.5 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700"
+                                className={`group flex items-center gap-0.5 px-1 py-0.5 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700 ${
+                                    mcpAnimatingIds?.has(collection.id) ? "mcp-animate-pulse-collection" : ""
+                                }`}
                                 onClick={() => toggleCollection(collection.id)}
                             >
                                 {/* Chevron */}
@@ -506,6 +536,8 @@ export default function CollectionsBrowser({
                                                         isSelected
                                                             ? "bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/50"
                                                             : "hover:bg-gray-200 dark:hover:bg-gray-700"
+                                                    } ${
+                                                        mcpAnimatingIds?.has(doc.id) ? "mcp-animate-pulse" : ""
                                                     }`}
                                                 >
                                                     {/* Chevron (toggles TOC) */}

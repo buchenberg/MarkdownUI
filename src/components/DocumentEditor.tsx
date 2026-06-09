@@ -11,6 +11,7 @@ interface DocumentEditorProps {
     zoomLevel: number;
     scrollToHeadingId?: string | null;
     onHeadingScrolled?: () => void;
+    mcpFlash?: boolean;
 }
 
 export default function DocumentEditor({
@@ -19,6 +20,7 @@ export default function DocumentEditor({
     zoomLevel,
     scrollToHeadingId,
     onHeadingScrolled,
+    mcpFlash,
 }: DocumentEditorProps) {
     const previewRef = useRef<HTMLDivElement>(null);
     const { theme } = useTheme();
@@ -99,7 +101,8 @@ export default function DocumentEditor({
     };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden relative">
+            {mcpFlash && <div className="mcp-shimmer-overlay" />}
             <div className="flex-1 min-h-0">
                 <ResizableSplit
                     left={
