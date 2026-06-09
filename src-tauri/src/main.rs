@@ -10,6 +10,7 @@ use converter::{ExportFormat, convert_markdown, check_chrome_available, convert_
 use mcp_server::DbArc;
 use std::sync::{Arc, Mutex};
 use std::fs;
+use serde_json::{json, Value};
 use tauri::{State, Manager};
 use tauri::api::path::app_data_dir;
 use tokio::task::JoinHandle;
@@ -144,6 +145,34 @@ fn move_document(db: DbState, id: i64, folderId: Option<i64>) -> Result<database
     db.move_document(id, folderId).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_folder(db: DbState, id: i64) -> Result<Option<database::Folder>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.get_folder(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_folder(db: DbState, id: i64, parentFolderId: Option<i64>) -> Result<database::Folder, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.move_folder(id, parentFolderId).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_folder_contents(db: DbState, folderId: i64) -> Result<Value, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let folders = db.get_folders_by_parent(folderId).map_err(|e| e.to_string())?;
+    let docs = db.get_documents_by_folder(folderId).map_err(|e| e.to_string())?;
+    let slim_docs: Vec<Value> = docs.iter().map(|d| json!({
+        "id": d.id,
+        "collection_id": d.collection_id,
+        "folder_id": d.folder_id,
+        "name": d.name,
+        "created_at": d.created_at,
+        "updated_at": d.updated_at,
+    })).collect();
+    Ok(json!({ "folders": folders, "documents": slim_docs }))
+}
+
 /// Check if PDF export is available (Chrome installed)
 #[tauri::command]
 fn check_pdf_available() -> Result<bool, String> {
@@ -272,6 +301,9 @@ fn main() {
             delete_folder,
             get_documents_by_folder,
             move_document,
+            get_folder,
+            move_folder,
+            list_folder_contents,
             check_pdf_available,
             export_document,
             start_mcp_server,

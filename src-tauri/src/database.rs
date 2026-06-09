@@ -417,6 +417,24 @@ impl Database {
         Ok(folders)
     }
 
+    pub fn get_folders_by_parent(&self, parent_folder_id: i64) -> SqliteResult<Vec<Folder>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, parent_folder_id, name, created_at, updated_at FROM folders WHERE parent_folder_id = ? ORDER BY name"
+        )?;
+        let folders = stmt.query_map(rusqlite::params![parent_folder_id], |row| {
+            Ok(Folder {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                parent_folder_id: row.get(2)?,
+                name: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.collect::<SqliteResult<Vec<_>>>()?;
+        Ok(folders)
+    }
+
     pub fn update_folder(&self, id: i64, name: String) -> SqliteResult<Folder> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -433,6 +451,16 @@ impl Database {
         // No manual cleanup needed — SQLite enforces the FK constraints.
         let changes = conn.execute("DELETE FROM folders WHERE id = ?", rusqlite::params![id])?;
         Ok(changes > 0)
+    }
+
+    pub fn move_folder(&self, id: i64, parent_folder_id: Option<i64>) -> SqliteResult<Folder> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE folders SET parent_folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            rusqlite::params![parent_folder_id, id],
+        )?;
+        Self::get_folder_internal(&conn, id)
+            .and_then(|opt| opt.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows))
     }
 
     /// Full-text search across documents by name and content.

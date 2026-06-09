@@ -319,6 +319,36 @@ fn tools_manifest() -> Value {
                 },
                 "required": ["id"]
             }
+        },
+        {
+            "name": "get_folder",
+            "description": "Get a single folder by ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "id": { "type": "number" } },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "move_folder",
+            "description": "Move a folder to a different parent (null = collection root)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "number" },
+                    "parent_folder_id": { "type": "number" }
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "list_folder_contents",
+            "description": "List all child folders and documents inside a folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "folder_id": { "type": "number" } },
+                "required": ["folder_id"]
+            }
         }
     ])
 }
@@ -569,6 +599,47 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
                 name: doc.name.clone(),
             });
             Ok(result)
+        }
+
+        "get_folder" => {
+            let id = get_i64(&args, "id")?;
+            match db.get_folder(id).map_err(|e| e.to_string())? {
+                Some(f) => Ok(serde_json::to_string_pretty(&f).unwrap()),
+                None => Err(format!("Folder {id} not found")),
+            }
+        }
+
+        "move_folder" => {
+            let id = get_i64(&args, "id")?;
+            let parent_folder_id = args.get("parent_folder_id").and_then(Value::as_i64);
+            let folder = db.move_folder(id, parent_folder_id).map_err(|e| e.to_string())?;
+            let result = serde_json::to_string_pretty(&folder).unwrap();
+            emit_event(McpEvent {
+                operation: "move_folder".into(),
+                id: folder.id,
+                collection_id: Some(folder.collection_id),
+                name: folder.name.clone(),
+            });
+            Ok(result)
+        }
+
+        "list_folder_contents" => {
+            let folder_id = get_i64(&args, "folder_id")?;
+            let child_folders = db.get_folders_by_parent(folder_id).map_err(|e| e.to_string())?;
+            let docs = db.get_documents_by_folder(folder_id).map_err(|e| e.to_string())?;
+            // Slim document list (no content)
+            let slim_docs: Vec<Value> = docs.iter().map(|d| json!({
+                "id": d.id,
+                "collection_id": d.collection_id,
+                "folder_id": d.folder_id,
+                "name": d.name,
+                "created_at": d.created_at,
+                "updated_at": d.updated_at,
+            })).collect();
+            Ok(serde_json::to_string_pretty(&json!({
+                "folders": child_folders,
+                "documents": slim_docs,
+            })).unwrap())
         }
 
         "search_documents" => {

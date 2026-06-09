@@ -160,6 +160,18 @@ export async function moveDocument(id: number, folderId: number | null): Promise
     return invoke<Document>("move_document", { id, folderId });
 }
 
+export async function getFolder(id: number): Promise<Folder | null> {
+    return invoke<Folder | null>("get_folder", { id });
+}
+
+export async function moveFolder(id: number, parentFolderId: number | null): Promise<Folder> {
+    return invoke<Folder>("move_folder", { id, parentFolderId });
+}
+
+export async function listFolderContents(folderId: number): Promise<{ folders: Folder[]; documents: Document[] }> {
+    return invoke<{ folders: Folder[]; documents: Document[] }>("list_folder_contents", { folderId });
+}
+
 // ── MCP Server API ────────────────────────────────────────────────────────────
 
 export async function startMcpServer(): Promise<void> {
