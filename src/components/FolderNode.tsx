@@ -152,8 +152,9 @@ export default function FolderNode({
                     >
                         <button
                             title="New Document"
-                            onClick={() => {
-                                onDocumentCreate(folder.collection_id, folder.id);
+                            onClick={async () => {
+                                await onDocumentCreate(folder.collection_id, folder.id);
+                                await loadChildren();
                             }}
                             className="p-0.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
                         >
