@@ -10,6 +10,7 @@ use converter::{ExportFormat, convert_markdown, check_chrome_available, convert_
 use mcp_server::DbArc;
 use std::sync::{Arc, Mutex};
 use std::fs;
+use serde_json::{json, Value};
 use tauri::{State, Manager};
 use tauri::api::path::app_data_dir;
 use tokio::task::JoinHandle;
@@ -75,12 +76,13 @@ fn get_document(db: DbState, id: i64) -> Result<Option<database::Document>, Stri
 #[tauri::command]
 fn create_document(
     db: DbState,
-    collection_id: i64,
+    collectionId: i64,
+    folderId: Option<i64>,
     name: String,
     content: String,
 ) -> Result<database::Document, String> {
     let db = db.lock().map_err(|e| e.to_string())?;
-    db.create_document(collection_id, name, content).map_err(|e| e.to_string())
+    db.create_document(collectionId, folderId, name, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -98,6 +100,77 @@ fn update_document(
 fn delete_document(db: DbState, id: i64) -> Result<bool, String> {
     let db = db.lock().map_err(|e| e.to_string())?;
     db.delete_document(id).map_err(|e| e.to_string())
+}
+
+// ── Folder commands ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn create_folder(
+    db: DbState,
+    collectionId: i64,
+    parentFolderId: Option<i64>,
+    name: String,
+) -> Result<database::Folder, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.create_folder(collectionId, parentFolderId, name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_folders_by_collection(db: DbState, collectionId: i64) -> Result<Vec<database::Folder>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.get_folders_by_collection(collectionId).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_folder(db: DbState, id: i64, name: String) -> Result<database::Folder, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.update_folder(id, name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_folder(db: DbState, id: i64) -> Result<bool, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.delete_folder(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_documents_by_folder(db: DbState, folderId: i64) -> Result<Vec<database::Document>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.get_documents_by_folder(folderId).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_document(db: DbState, id: i64, folderId: Option<i64>) -> Result<database::Document, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.move_document(id, folderId).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_folder(db: DbState, id: i64) -> Result<Option<database::Folder>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.get_folder(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_folder(db: DbState, id: i64, parentFolderId: Option<i64>) -> Result<database::Folder, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.move_folder(id, parentFolderId).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_folder_contents(db: DbState, folderId: i64) -> Result<Value, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let folders = db.get_folders_by_parent(folderId).map_err(|e| e.to_string())?;
+    let docs = db.get_documents_by_folder(folderId).map_err(|e| e.to_string())?;
+    let slim_docs: Vec<Value> = docs.iter().map(|d| json!({
+        "id": d.id,
+        "collection_id": d.collection_id,
+        "folder_id": d.folder_id,
+        "name": d.name,
+        "created_at": d.created_at,
+        "updated_at": d.updated_at,
+    })).collect();
+    Ok(json!({ "folders": folders, "documents": slim_docs }))
 }
 
 /// Check if PDF export is available (Chrome installed)
@@ -222,6 +295,15 @@ fn main() {
             create_document,
             update_document,
             delete_document,
+            create_folder,
+            get_folders_by_collection,
+            update_folder,
+            delete_folder,
+            get_documents_by_folder,
+            move_document,
+            get_folder,
+            move_folder,
+            list_folder_contents,
             check_pdf_available,
             export_document,
             start_mcp_server,

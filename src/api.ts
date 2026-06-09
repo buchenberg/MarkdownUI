@@ -10,9 +10,19 @@ export interface Collection {
     updated_at: string;
 }
 
+export interface Folder {
+    id: number;
+    collection_id: number;
+    parent_folder_id: number | null;
+    name: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Document {
     id: number;
     collection_id: number;
+    folder_id: number | null;
     name: string;
     content: string;
     created_at: string;
@@ -67,10 +77,11 @@ export async function getDocument(id: number): Promise<Document | null> {
 
 export async function createDocument(
     collectionId: number,
+    folderId: number | null,
     name: string,
     content: string,
 ): Promise<Document> {
-    return invoke<Document>("create_document", { collectionId, name, content });
+    return invoke<Document>("create_document", { collectionId, folderId, name, content });
 }
 
 export async function updateDocument(
@@ -118,6 +129,48 @@ export async function exportMarkdown(
 
 // Document Export API
 export type ExportFormat = "html" | "pdf";
+
+// ── Folder API ────────────────────────────────────────────────────────────────
+
+export async function createFolder(
+    collectionId: number,
+    parentFolderId: number | null,
+    name: string,
+): Promise<Folder> {
+    return invoke<Folder>("create_folder", { collectionId, parentFolderId, name });
+}
+
+export async function getFoldersByCollection(collectionId: number): Promise<Folder[]> {
+    return invoke<Folder[]>("get_folders_by_collection", { collectionId });
+}
+
+export async function updateFolder(id: number, name: string): Promise<Folder> {
+    return invoke<Folder>("update_folder", { id, name });
+}
+
+export async function deleteFolder(id: number): Promise<boolean> {
+    return invoke<boolean>("delete_folder", { id });
+}
+
+export async function getDocumentsByFolder(folderId: number): Promise<Document[]> {
+    return invoke<Document[]>("get_documents_by_folder", { folderId });
+}
+
+export async function moveDocument(id: number, folderId: number | null): Promise<Document> {
+    return invoke<Document>("move_document", { id, folderId });
+}
+
+export async function getFolder(id: number): Promise<Folder | null> {
+    return invoke<Folder | null>("get_folder", { id });
+}
+
+export async function moveFolder(id: number, parentFolderId: number | null): Promise<Folder> {
+    return invoke<Folder>("move_folder", { id, parentFolderId });
+}
+
+export async function listFolderContents(folderId: number): Promise<{ folders: Folder[]; documents: Document[] }> {
+    return invoke<{ folders: Folder[]; documents: Document[] }>("list_folder_contents", { folderId });
+}
 
 // ── MCP Server API ────────────────────────────────────────────────────────────
 
