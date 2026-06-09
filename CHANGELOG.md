@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2](https://github.com/buchenberg/MarkdownUI/compare/v1.2.1...v1.2.2) (2026-06-09)
+
+### Bug Fixes
+
+* update release workflow to ubuntu-latest with webkit2gtk 4.1 ([cc36609](https://github.com/buchenberg/MarkdownUI/commit/cc366095978a540c883a45fb75eed978767ebb3b))
+
 ## [1.2.1](https://github.com/buchenberg/MarkdownUI/compare/v1.2.0...v1.2.1) (2026-06-09)
 
 ### Bug Fixes
