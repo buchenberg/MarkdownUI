@@ -86,7 +86,7 @@ Click the **MCP** button in the top-right header:
 
 ### Available Tools
 
-Once running, agents have access to 11 tools:
+Once running, agents have access to 19 tools:
 
 | Tool | Description |
 |------|-------------|
@@ -101,6 +101,14 @@ Once running, agents have access to 11 tools:
 | `update_document` | Update a document's name and/or content |
 | `delete_document` | Delete a document |
 | `search_documents` | Search documents by name or content across all collections |
+| `create_folder` | Create a folder in a collection |
+| `list_folders` | List all folders in a collection |
+| `get_folder` | Get a folder by ID |
+| `update_folder` | Rename a folder |
+| `delete_folder` | Delete a folder and its contents |
+| `move_folder` | Move a folder to a different parent |
+| `move_document` | Move a document to a different folder |
+| `list_folder_contents` | List child folders and documents in a folder |
 
 ### Agent Configuration
 
@@ -117,33 +125,94 @@ mcp_servers:
 
 #### VS Code (Copilot / Continue / etc.)
 
-`.vscode/mcp.json` is already included in the repo. Add an entry:
+Add to `.vscode/mcp.json`:
 
 ```json
 {
   "servers": {
     "markdownui": {
-      "command": "node",
-      "args": ["${workspaceFolder}/mcp-server/server.js"],
-      "type": "stdio"
+      "url": "http://localhost:3333/mcp",
+      "type": "http"
     }
   }
 }
 ```
 
-> **Note:** The `mcp-server/` directory contains a Node.js stdio implementation for clients that don't support HTTP transport. Run `npm install` inside `mcp-server/` before using it.
-
 #### Claude Desktop
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "markdownui": {
-      "command": "node",
-      "args": ["C:/Code/Personal/MarkdownUI/mcp-server/server.js"]
+      "url": "http://localhost:3333/mcp",
+      "type": "http"
     }
   }
 }
+```
+
+Config file locations:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+#### Cline
+
+Add to Cline's MCP settings (`cline_mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "markdownui": {
+      "url": "http://localhost:3333/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+Config file locations:
+- **Windows**: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+- **macOS**: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+- **Linux**: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+
+Or via CLI (Windows PowerShell):
+
+```powershell
+$configPath = "$env:APPDATA\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.mcpServers | Add-Member -Name "markdownui" -Value @{ url = "http://localhost:3333/mcp"; type = "http" } -MemberType NoteProperty
+$config | ConvertTo-Json -Depth 10 | Set-Content $configPath
+```
+
+#### Roo Code (Roo)
+
+Add to Roo's MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "markdownui": {
+      "url": "http://localhost:3333/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+Config file locations:
+- **Windows**: `%APPDATA%\Code\User\globalStorage\rooveterinaryinc.roo-cline\settings\mcp_settings.json`
+- **macOS**: `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json`
+- **Linux**: `~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json`
+
+Or via CLI (Windows PowerShell):
+
+```powershell
+$configPath = "$env:APPDATA\Code\User\globalStorage\rooveterinaryinc.roo-cline\settings\mcp_settings.json"
+$config = Get-Content $configPath | ConvertFrom-Json
+$config.mcpServers | Add-Member -Name "markdownui" -Value @{ url = "http://localhost:3333/mcp"; type = "http" } -MemberType NoteProperty
+$config | ConvertTo-Json -Depth 10 | Set-Content $configPath
 ```
 
 ## Development
@@ -244,9 +313,6 @@ MarkdownUI/
 │       ├── database.rs     # SQLite operations
 │       ├── converter.rs    # Export conversion
 │       └── mcp_server.rs   # Embedded axum MCP HTTP server
-├── mcp-server/             # Node.js stdio MCP server (alternative transport)
-│   ├── server.js           # MCP server implementation
-│   └── README.md           # Setup instructions
 └── docs/                   # Documentation
     └── ARCHITECTURE.md     # Detailed architecture guide
 ```
