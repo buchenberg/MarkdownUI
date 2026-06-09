@@ -633,7 +633,7 @@ export default function CollectionsBrowser({
                                             <div key={doc.id}>
                                                 {/* ── Document row ── */}
                                                 <div
-                                                    className={`group flex items-center gap-0.5 pl-5 pr-1 py-0.5 select-none ${
+                                                    className={`group flex items-center gap-0.5 pl-7 pr-1 py-0.5 select-none ${
                                                         isSelected
                                                             ? "bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/50"
                                                             : "hover:bg-gray-200 dark:hover:bg-gray-700"

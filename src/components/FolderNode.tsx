@@ -1,6 +1,29 @@
 import { useState } from "react";
 import type { Folder, Document } from "../api";
 import * as api from "../api";
+import { slugify } from "../utils/slugify";
+
+interface Heading {
+    text: string;
+    level: number;
+    id: string;
+}
+
+function parseHeadings(content: string): Heading[] {
+    const counts = new Map<string, number>();
+    return content.split("\n").reduce<Heading[]>((acc, line) => {
+        const match = line.match(/^(#{1,6})\s+(.+)/);
+        if (match) {
+            const text = match[2].trim();
+            let id = slugify(text);
+            const count = counts.get(id) ?? 0;
+            counts.set(id, count + 1);
+            if (count > 0) id = `${id}-${count}`;
+            acc.push({ level: match[1].length, text, id });
+        }
+        return acc;
+    }, []);
+}
 
 interface FolderNodeProps {
     folder: Folder;
@@ -38,6 +61,7 @@ export default function FolderNode({
     const [newFolderName, setNewFolderName] = useState("");
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteDocId, setDeleteDocId] = useState<number | null>(null);
+    const [expandedDocs, setExpandedDocs] = useState<Set<number>>(new Set());
 
     const childFolders = allFolders.filter((f) => f.parent_folder_id === folder.id);
 
@@ -101,7 +125,7 @@ export default function FolderNode({
                 className={`group flex items-center gap-0.5 py-0.5 pr-1 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700 ${
                     mcpAnimatingIds?.has(folder.id) ? "mcp-animate-pulse" : ""
                 }`}
-                style={{ paddingLeft: `${12 + depth * 16}px` }}
+                style={{ paddingLeft: `${28 + depth * 16}px` }}
                 onClick={toggle}
             >
                 {/* Chevron */}
@@ -195,7 +219,7 @@ export default function FolderNode({
             {/* Delete confirmation */}
             {showDeleteConfirm && (
                 <div
-                    style={{ paddingLeft: `${24 + depth * 16}px` }}
+                    style={{ paddingLeft: `${40 + depth * 16}px` }}
                     className="px-2 py-1.5 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800"
                 >
                     <p className="text-xs text-red-700 dark:text-red-300 mb-1.5">
@@ -221,7 +245,7 @@ export default function FolderNode({
             {/* New folder inline form */}
             {showNewFolderInput && (
                 <div
-                    style={{ paddingLeft: `${24 + depth * 16}px` }}
+                    style={{ paddingLeft: `${40 + depth * 16}px` }}
                     className="px-2 py-1.5 bg-gray-50 dark:bg-gray-800 border-t border-b border-gray-200 dark:border-gray-700"
                 >
                     <div className="flex gap-1.5">
@@ -284,6 +308,8 @@ export default function FolderNode({
                     {/* Documents in this folder */}
                     {documents.map((doc) => {
                         const isSelected = selectedDocument?.id === doc.id;
+                        const isDocExpanded = expandedDocs.has(doc.id);
+                        const headings = isDocExpanded ? parseHeadings(doc.content) : [];
                         return (
                             <div key={doc.id}>
                                 <div
@@ -294,9 +320,28 @@ export default function FolderNode({
                                     } ${
                                         mcpAnimatingIds?.has(doc.id) ? "mcp-animate-pulse" : ""
                                     }`}
-                                    style={{ paddingLeft: `${28 + depth * 16}px` }}
-                                    onClick={() => onDocumentSelect(doc)}
+                                    style={{ paddingLeft: `${44 + depth * 16}px` }}
                                 >
+                                    {/* Chevron (toggles heading TOC) */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedDocs((prev) => {
+                                                const next = new Set(prev);
+                                                if (next.has(doc.id)) next.delete(doc.id);
+                                                else next.add(doc.id);
+                                                return next;
+                                            });
+                                        }}
+                                        className={`flex-shrink-0 w-4 h-4 flex items-center justify-center transition-transform duration-100 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ${
+                                            isDocExpanded ? "" : "-rotate-90"
+                                        }`}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M7 10l5 5 5-5z" />
+                                        </svg>
+                                    </button>
+
                                     {/* File icon */}
                                     <span
                                         className={`flex-shrink-0 ${
@@ -312,15 +357,20 @@ export default function FolderNode({
                                     </span>
 
                                     {/* Name */}
-                                    <span
-                                        className={`text-sm truncate ml-0.5 ${
-                                            isSelected
-                                                ? "text-blue-700 dark:text-blue-300 font-medium"
-                                                : "text-gray-700 dark:text-gray-300"
-                                        }`}
+                                    <div
+                                        className="flex-1 flex items-center min-w-0 cursor-pointer"
+                                        onClick={() => onDocumentSelect(doc)}
                                     >
-                                        {doc.name}
-                                    </span>
+                                        <span
+                                            className={`text-sm truncate ml-0.5 ${
+                                                isSelected
+                                                    ? "text-blue-700 dark:text-blue-300 font-medium"
+                                                    : "text-gray-700 dark:text-gray-300"
+                                            }`}
+                                        >
+                                            {doc.name}
+                                        </span>
+                                    </div>
 
                                     {/* Hover: delete */}
                                     <div
@@ -342,10 +392,34 @@ export default function FolderNode({
                                     </div>
                                 </div>
 
+                                {/* Heading TOC */}
+                                {isDocExpanded && headings.length > 0 && (
+                                    <div>
+                                        {headings.map((heading, i) => (
+                                            <div
+                                                key={i}
+                                                style={{ paddingLeft: `${60 + depth * 16 + (heading.level - 1) * 10}px` }}
+                                                className="flex items-center py-0.5 pr-2 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700"
+                                                onClick={() => onHeadingClick(doc, heading.id)}
+                                            >
+                                                <span
+                                                    className={`text-xs truncate ${
+                                                        heading.level === 1
+                                                            ? "text-gray-600 dark:text-gray-300"
+                                                            : "text-gray-500 dark:text-gray-400"
+                                                    }`}
+                                                >
+                                                    {heading.text}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* Delete doc confirmation */}
                                 {deleteDocId === doc.id && (
                                     <div
-                                        style={{ paddingLeft: `${40 + depth * 16}px` }}
+                                        style={{ paddingLeft: `${56 + depth * 16}px` }}
                                         className="px-2 py-1 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800"
                                     >
                                         <p className="text-xs text-red-700 dark:text-red-300 mb-1">
@@ -374,7 +448,7 @@ export default function FolderNode({
                     {/* Empty state */}
                     {documents.length === 0 && childFolders.length === 0 && !loading && (
                         <div
-                            style={{ paddingLeft: `${28 + depth * 16}px` }}
+                            style={{ paddingLeft: `${44 + depth * 16}px` }}
                             className="py-1 text-xs text-gray-400 dark:text-gray-600 italic"
                         >
                             Empty folder
