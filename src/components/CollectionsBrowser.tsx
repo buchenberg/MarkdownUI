@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import type { Collection, Document } from "../api";
+import type { Collection, Document, Folder } from "../api";
 import * as api from "../api";
 import ConfirmModal from "./ConfirmModal";
+import FolderNode from "./FolderNode";
 import { slugify } from "../utils/slugify";
 import type { McpEventDetail } from "../hooks/useMcpEvents";
 
@@ -11,12 +12,15 @@ interface CollectionsBrowserProps {
     onDocumentSelect: (document: Document) => void;
     onDocumentCreate?: (
         collectionId: number,
+        folderId: number | null,
         name: string,
         content: string,
     ) => Promise<Document>;
     onDocumentDelete: (documentId: number) => Promise<void>;
     onCollectionCreate: (name: string, description?: string) => Promise<Collection>;
     onCollectionDelete: (collectionId: number) => Promise<void>;
+    onFolderCreate?: (collectionId: number, parentFolderId: number | null, name: string) => Promise<Folder>;
+    onFolderDelete?: (folderId: number) => Promise<void>;
     onHeadingClick: (document: Document, headingId: string) => void;
     mcpAnimatingIds?: Set<number>;
     lastMcpEvents?: McpEventDetail[];
@@ -52,12 +56,15 @@ export default function CollectionsBrowser({
     onDocumentDelete,
     onCollectionCreate,
     onCollectionDelete,
+    onFolderCreate,
+    onFolderDelete,
     onHeadingClick,
     mcpAnimatingIds,
     lastMcpEvents,
 }: CollectionsBrowserProps) {
     const [expandedCollections, setExpandedCollections] = useState<Set<number>>(new Set());
     const [documentsByCollection, setDocumentsByCollection] = useState<Map<number, Document[]>>(new Map());
+    const [foldersByCollection, setFoldersByCollection] = useState<Map<number, Folder[]>>(new Map());
     const [loadingCollections, setLoadingCollections] = useState<Set<number>>(new Set());
     const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
     const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
@@ -86,12 +93,26 @@ export default function CollectionsBrowser({
         }
     };
 
+    const fetchFoldersForCollection = async (collectionId: number) => {
+        try {
+            const folders = await api.getFoldersByCollection(collectionId);
+            setFoldersByCollection((prev) => {
+                const next = new Map(prev);
+                next.set(collectionId, folders);
+                return next;
+            });
+        } catch (error) {
+            console.error("Failed to fetch folders:", error);
+        }
+    };
+
     // ── Expand / collapse ────────────────────────────────────────────────────
 
     const loadAndExpandCollection = async (collectionId: number) => {
         if (!documentsByCollection.has(collectionId)) {
             setLoadingCollections((prev) => new Set([...prev, collectionId]));
             await fetchDocumentsForCollection(collectionId);
+            await fetchFoldersForCollection(collectionId);
             setLoadingCollections((prev) => {
                 const next = new Set(prev);
                 next.delete(collectionId);
@@ -168,6 +189,7 @@ export default function CollectionsBrowser({
         const timer = setTimeout(() => {
             for (const cid of pendingRefreshes.current) {
                 fetchDocumentsForCollection(cid);
+                fetchFoldersForCollection(cid);
             }
             pendingRefreshes.current.clear();
         }, 500);
@@ -220,13 +242,13 @@ export default function CollectionsBrowser({
 
     // ── Document CRUD ────────────────────────────────────────────────────────
 
-    const handleCreateDocument = async (collectionId: number) => {
+    const handleCreateDocument = async (collectionId: number, folderId: number | null = null) => {
         if (!onDocumentCreate) return;
         const existingDocs = documentsByCollection.get(collectionId) ?? [];
         const name = `New Document ${existingDocs.length + 1}`;
         const content = `# New Document\n\nWrite your markdown content here.\n`;
         try {
-            const newDocument = await onDocumentCreate(collectionId, name, content);
+            const newDocument = await onDocumentCreate(collectionId, folderId, name, content);
             await fetchDocumentsForCollection(collectionId);
             onDocumentSelect(newDocument);
         } catch {
@@ -276,7 +298,7 @@ export default function CollectionsBrowser({
         try {
             const content = await file.text();
             const name = file.name.replace(/\.md$/i, "");
-            const newDocument = await api.createDocument(collectionId, name, content);
+            const newDocument = await api.createDocument(collectionId, null, name, content);
             await fetchDocumentsForCollection(collectionId);
             onDocumentSelect(newDocument);
         } catch {
@@ -415,6 +437,9 @@ export default function CollectionsBrowser({
                     const isExpanded = expandedCollections.has(collection.id);
                     const isLoading = loadingCollections.has(collection.id);
                     const docs = documentsByCollection.get(collection.id) ?? [];
+                    const folders = foldersByCollection.get(collection.id) ?? [];
+                    const rootFolders = folders.filter((f) => f.parent_folder_id === null);
+                    const rootDocs = docs.filter((d) => d.folder_id === null);
 
                     return (
                         <div key={collection.id}>
@@ -514,16 +539,43 @@ export default function CollectionsBrowser({
                                 )}
                             </div>
 
-                            {/* ── Documents ── */}
+                            {/* ── Root-level folders ── */}
+                            {isExpanded && rootFolders.map((folder) => (
+                                <FolderNode
+                                    key={folder.id}
+                                    folder={folder}
+                                    allFolders={folders}
+                                    depth={0}
+                                    selectedDocument={selectedDocument}
+                                    onDocumentSelect={onDocumentSelect}
+                                    onHeadingClick={onHeadingClick}
+                                    onDocumentDelete={onDocumentDelete}
+                                    onFolderDelete={async (id) => {
+                                        if (onFolderDelete) await onFolderDelete(id);
+                                    }}
+                                    onFolderCreate={async (collectionId, parentFolderId, name) => {
+                                        if (onFolderCreate) return await onFolderCreate(collectionId, parentFolderId, name);
+                                        throw new Error("onFolderCreate not provided");
+                                    }}
+                                    onDocumentCreate={handleCreateDocument}
+                                    onRefresh={() => {
+                                        fetchDocumentsForCollection(collection.id);
+                                        fetchFoldersForCollection(collection.id);
+                                    }}
+                                    mcpAnimatingIds={mcpAnimatingIds}
+                                />
+                            ))}
+
+                            {/* ── Root-level documents ── */}
                             {isExpanded && (
                                 <div>
-                                    {docs.length === 0 && !isLoading && (
+                                    {docs.length === 0 && folders.length === 0 && !isLoading && (
                                         <div className="pl-9 py-1 text-xs text-gray-400 dark:text-gray-600 italic">
                                             No documents
                                         </div>
                                     )}
 
-                                    {docs.map((doc) => {
+                                    {rootDocs.map((doc) => {
                                         const isDocExpanded = expandedDocuments.has(doc.id);
                                         const isSelected = selectedDocument?.id === doc.id;
                                         const headings = isDocExpanded ? parseHeadings(doc.content) : [];

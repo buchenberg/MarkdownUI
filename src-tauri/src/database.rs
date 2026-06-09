@@ -12,10 +12,21 @@ pub struct Collection {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Folder {
+    pub id: i64,
+    pub collection_id: i64,
+    pub parent_folder_id: Option<i64>,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Document {
     pub id: i64,
     pub collection_id: i64,
+    pub folder_id: Option<i64>,
     pub name: String,
     pub content: String,
     pub created_at: String,
@@ -92,6 +103,40 @@ impl Database {
         
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection_id)",
+            rusqlite::params![],
+        )?;
+
+        // --- Folders table (nested organization within collections) ---
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collection_id INTEGER NOT NULL,
+                parent_folder_id INTEGER,
+                name TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_folder_id) REFERENCES folders(id) ON DELETE CASCADE
+            )",
+            rusqlite::params![],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_folders_collection ON folders(collection_id)",
+            rusqlite::params![],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_folder_id)",
+            rusqlite::params![],
+        )?;
+
+        // Add folder_id to documents (safe migration — silently skips if column exists)
+        let _ = conn.execute(
+            "ALTER TABLE documents ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE CASCADE",
+            rusqlite::params![],
+        );
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id)",
             rusqlite::params![],
         )?;
 
@@ -213,20 +258,23 @@ impl Database {
         Ok(changes > 0)
     }
     
+    // ── Documents ────────────────────────────────────────────────────────────
+    
     pub fn get_documents_by_collection(&self, collection_id: i64) -> SqliteResult<Vec<Document>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, collection_id, name, content, created_at, updated_at FROM documents WHERE collection_id = ? ORDER BY created_at DESC"
+            "SELECT id, collection_id, folder_id, name, content, created_at, updated_at FROM documents WHERE collection_id = ? ORDER BY created_at DESC"
         )?;
         
         let documents = stmt.query_map(rusqlite::params![collection_id], |row| {
             Ok(Document {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
-                name: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                folder_id: row.get(2)?,
+                name: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })?
         .collect::<SqliteResult<Vec<_>>>()?;
@@ -241,28 +289,29 @@ impl Database {
     
     fn get_document_internal(conn: &Connection, id: i64) -> SqliteResult<Option<Document>> {
         let mut stmt = conn.prepare(
-            "SELECT id, collection_id, name, content, created_at, updated_at FROM documents WHERE id = ?"
+            "SELECT id, collection_id, folder_id, name, content, created_at, updated_at FROM documents WHERE id = ?"
         )?;
         
         let document = stmt.query_row(rusqlite::params![id], |row| {
             Ok(Document {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
-                name: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                folder_id: row.get(2)?,
+                name: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         }).optional()?;
         
         Ok(document)
     }
     
-    pub fn create_document(&self, collection_id: i64, name: String, content: String) -> SqliteResult<Document> {
+    pub fn create_document(&self, collection_id: i64, folder_id: Option<i64>, name: String, content: String) -> SqliteResult<Document> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO documents (collection_id, name, content, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
-            rusqlite::params![collection_id, name, content],
+            "INSERT INTO documents (collection_id, folder_id, name, content, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            rusqlite::params![collection_id, folder_id, name, content],
         )?;
         
         let id = conn.last_insert_rowid();
@@ -284,6 +333,105 @@ impl Database {
     pub fn delete_document(&self, id: i64) -> SqliteResult<bool> {
         let conn = self.conn.lock().unwrap();
         let changes = conn.execute("DELETE FROM documents WHERE id = ?", rusqlite::params![id])?;
+        Ok(changes > 0)
+    }
+
+    pub fn move_document(&self, id: i64, folder_id: Option<i64>) -> SqliteResult<Document> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE documents SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            rusqlite::params![folder_id, id],
+        )?;
+        Self::get_document_internal(&conn, id)
+            .and_then(|opt| opt.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows))
+    }
+
+    pub fn get_documents_by_folder(&self, folder_id: i64) -> SqliteResult<Vec<Document>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, folder_id, name, content, created_at, updated_at FROM documents WHERE folder_id = ? ORDER BY created_at DESC"
+        )?;
+        let docs = stmt.query_map(rusqlite::params![folder_id], |row| {
+            Ok(Document {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                folder_id: row.get(2)?,
+                name: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?.collect::<SqliteResult<Vec<_>>>()?;
+        Ok(docs)
+    }
+
+    // ── Folders ──────────────────────────────────────────────────────────────
+
+    pub fn create_folder(&self, collection_id: i64, parent_folder_id: Option<i64>, name: String) -> SqliteResult<Folder> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO folders (collection_id, parent_folder_id, name, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+            rusqlite::params![collection_id, parent_folder_id, name],
+        )?;
+        let id = conn.last_insert_rowid();
+        Self::get_folder_internal(&conn, id)
+            .and_then(|opt| opt.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows))
+    }
+
+    fn get_folder_internal(conn: &Connection, id: i64) -> SqliteResult<Option<Folder>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, parent_folder_id, name, created_at, updated_at FROM folders WHERE id = ?"
+        )?;
+        stmt.query_row(rusqlite::params![id], |row| {
+            Ok(Folder {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                parent_folder_id: row.get(2)?,
+                name: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        }).optional()
+    }
+
+    pub fn get_folder(&self, id: i64) -> SqliteResult<Option<Folder>> {
+        let conn = self.conn.lock().unwrap();
+        Self::get_folder_internal(&conn, id)
+    }
+
+    pub fn get_folders_by_collection(&self, collection_id: i64) -> SqliteResult<Vec<Folder>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, parent_folder_id, name, created_at, updated_at FROM folders WHERE collection_id = ? ORDER BY name"
+        )?;
+        let folders = stmt.query_map(rusqlite::params![collection_id], |row| {
+            Ok(Folder {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                parent_folder_id: row.get(2)?,
+                name: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.collect::<SqliteResult<Vec<_>>>()?;
+        Ok(folders)
+    }
+
+    pub fn update_folder(&self, id: i64, name: String) -> SqliteResult<Folder> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE folders SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            rusqlite::params![name, id],
+        )?;
+        Self::get_folder_internal(&conn, id)
+            .and_then(|opt| opt.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows))
+    }
+
+    pub fn delete_folder(&self, id: i64) -> SqliteResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        // CASCADE handles children: sub-folders AND documents inside are deleted automatically.
+        // No manual cleanup needed — SQLite enforces the FK constraints.
+        let changes = conn.execute("DELETE FROM folders WHERE id = ?", rusqlite::params![id])?;
         Ok(changes > 0)
     }
 

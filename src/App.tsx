@@ -123,11 +123,12 @@ function App() {
 
     const handleDocumentCreate = async (
         collectionId: number,
+        folderId: number | null,
         name: string,
         content: string,
     ) => {
         try {
-            const newDocument = await api.createDocument(collectionId, name, content);
+            const newDocument = await api.createDocument(collectionId, folderId, name, content);
             setSelectedDocument(newDocument);
             return newDocument;
         } catch (error) {
@@ -196,6 +197,14 @@ function App() {
             console.error("Failed to delete document:", error);
             alert("Failed to delete document");
         }
+    };
+
+    const handleFolderCreate = async (collectionId: number, parentFolderId: number | null, name: string) => {
+        return await api.createFolder(collectionId, parentFolderId, name);
+    };
+
+    const handleFolderDelete = async (folderId: number) => {
+        await api.deleteFolder(folderId);
     };
 
     // Header control handlers
@@ -437,6 +446,8 @@ function App() {
                                 onDocumentDelete={handleDocumentDelete}
                                 onCollectionCreate={handleCollectionCreate}
                                 onCollectionDelete={handleCollectionDelete}
+                                onFolderCreate={handleFolderCreate}
+                                onFolderDelete={handleFolderDelete}
                                 onHeadingClick={handleHeadingClick}
                                 mcpAnimatingIds={animatingIds}
                                 lastMcpEvents={lastEvents}
