@@ -73,6 +73,8 @@ export default function CollectionsBrowser({
     const [deleteCollectionId, setDeleteCollectionId] = useState<number | null>(null);
     const [deleteDocumentId, setDeleteDocumentId] = useState<number | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [newRootFolderCollectionId, setNewRootFolderCollectionId] = useState<number | null>(null);
+    const [newRootFolderName, setNewRootFolderName] = useState("");
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadTargetCollectionIdRef = useRef<number | null>(null);
@@ -273,6 +275,20 @@ export default function CollectionsBrowser({
             setDeleteDocumentId(null);
         } catch {
             alert("Failed to delete document");
+        }
+    };
+
+    // ── Root folder creation ────────────────────────────────────────────────
+
+    const handleCreateRootFolder = async (collectionId: number) => {
+        if (!newRootFolderName.trim() || !onFolderCreate) return;
+        try {
+            await onFolderCreate(collectionId, null, newRootFolderName.trim());
+            setNewRootFolderName("");
+            setNewRootFolderCollectionId(null);
+            await fetchFoldersForCollection(collectionId);
+        } catch {
+            alert("Failed to create folder");
         }
     };
 
@@ -494,6 +510,22 @@ export default function CollectionsBrowser({
                                         className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0"
                                         onClick={(e) => e.stopPropagation()}
                                     >
+                                        {onFolderCreate && (
+                                            <button
+                                                title="New Folder"
+                                                onClick={() => {
+                                                    setNewRootFolderCollectionId(collection.id);
+                                                    setNewRootFolderName("");
+                                                }}
+                                                className="p-0.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                                            >
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                                    <line x1="12" y1="11" x2="12" y2="17" />
+                                                    <line x1="9" y1="14" x2="15" y2="14" />
+                                                </svg>
+                                            </button>
+                                        )}
                                         {onDocumentCreate && (
                                             <button
                                                 title="New Document"
@@ -540,6 +572,42 @@ export default function CollectionsBrowser({
                             </div>
 
                             {/* ── Root-level folders ── */}
+                            {isExpanded && newRootFolderCollectionId === collection.id && (
+                                <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-t border-b border-gray-200 dark:border-gray-700">
+                                    <div className="flex gap-1.5">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            placeholder="Folder name"
+                                            value={newRootFolderName}
+                                            onChange={(e) => setNewRootFolderName(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleCreateRootFolder(collection.id);
+                                                if (e.key === "Escape") {
+                                                    setNewRootFolderCollectionId(null);
+                                                    setNewRootFolderName("");
+                                                }
+                                            }}
+                                            className="flex-1 px-2 py-0.5 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                        />
+                                        <button
+                                            onClick={() => handleCreateRootFolder(collection.id)}
+                                            className="px-2 py-0.5 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+                                        >
+                                            Create
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setNewRootFolderCollectionId(null);
+                                                setNewRootFolderName("");
+                                            }}
+                                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {isExpanded && rootFolders.map((folder) => (
                                 <FolderNode
                                     key={folder.id}
