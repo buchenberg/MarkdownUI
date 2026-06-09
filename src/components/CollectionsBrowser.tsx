@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { Collection, Document, Folder } from "../api";
 import * as api from "../api";
-import ConfirmModal from "./ConfirmModal";
 import FolderNode from "./FolderNode";
 import { slugify } from "../utils/slugify";
 import type { McpEventDetail } from "../hooks/useMcpEvents";
@@ -324,39 +323,10 @@ export default function CollectionsBrowser({
         }
     };
 
-    // ── Derived helpers ──────────────────────────────────────────────────────
-
-    const deletingDocumentName =
-        deleteDocumentId !== null
-            ? [...documentsByCollection.values()]
-                  .flat()
-                  .find((d) => d.id === deleteDocumentId)?.name ?? "this document"
-            : "";
-
     // ── Render ───────────────────────────────────────────────────────────────
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            {/* Confirm modals */}
-            <ConfirmModal
-                isOpen={deleteCollectionId !== null}
-                title="Delete Collection"
-                message={`Are you sure you want to delete "${collections.find((c) => c.id === deleteCollectionId)?.name}"? This will also delete all documents in this collection. This action cannot be undone.`}
-                confirmText="Delete"
-                cancelText="Cancel"
-                onConfirm={handleDeleteCollection}
-                onCancel={() => setDeleteCollectionId(null)}
-            />
-            <ConfirmModal
-                isOpen={deleteDocumentId !== null}
-                title="Delete Document"
-                message={`Are you sure you want to delete "${deletingDocumentName}"? This action cannot be undone.`}
-                confirmText="Delete"
-                cancelText="Cancel"
-                onConfirm={handleDeleteDocument}
-                onCancel={() => setDeleteDocumentId(null)}
-            />
-
             {/* Hidden file input for uploads */}
             <input
                 ref={fileInputRef}
@@ -552,6 +522,29 @@ export default function CollectionsBrowser({
                                 )}
                             </div>
 
+                            {/* Inline collection delete confirmation */}
+                            {deleteCollectionId === collection.id && (
+                                <div className="pl-3 pr-2 py-1.5 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800">
+                                    <p className="text-xs text-red-700 dark:text-red-300 mb-1.5">
+                                        Delete "{collection.name}" and all its contents? This cannot be undone.
+                                    </p>
+                                    <div className="flex gap-1.5">
+                                        <button
+                                            onClick={handleDeleteCollection}
+                                            className="px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                        >
+                                            Delete
+                                        </button>
+                                        <button
+                                            onClick={() => setDeleteCollectionId(null)}
+                                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* ── Root-level folders ── */}
                             {isExpanded && newRootFolderCollectionId === collection.id && (
                                 <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-t border-b border-gray-200 dark:border-gray-700">
@@ -713,6 +706,29 @@ export default function CollectionsBrowser({
                                                                 </span>
                                                             </div>
                                                         ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Inline doc delete confirmation */}
+                                                {deleteDocumentId === doc.id && (
+                                                    <div className="pl-7 pr-2 py-1 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800">
+                                                        <p className="text-xs text-red-700 dark:text-red-300 mb-1">
+                                                            Delete "{doc.name}"? This cannot be undone.
+                                                        </p>
+                                                        <div className="flex gap-1.5">
+                                                            <button
+                                                                onClick={handleDeleteDocument}
+                                                                className="px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setDeleteDocumentId(null)}
+                                                                className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
