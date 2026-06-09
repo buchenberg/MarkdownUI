@@ -440,6 +440,7 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
                 .map(|d| json!({
                     "id": d.id,
                     "collection_id": d.collection_id,
+                    "folder_id": d.folder_id,
                     "name": d.name,
                     "created_at": d.created_at,
                     "updated_at": d.updated_at,
