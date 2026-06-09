@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Folder, Document } from "../api";
 import * as api from "../api";
 import { slugify } from "../utils/slugify";
@@ -77,6 +77,14 @@ export default function FolderNode({
             setLoading(false);
         }
     };
+
+    // Sync selected document into local state (e.g. after rename + save)
+    useEffect(() => {
+        if (!selectedDocument || selectedDocument.folder_id !== folder.id) return;
+        setDocuments((prev) =>
+            prev.map((d) => (d.id === selectedDocument.id ? selectedDocument : d)),
+        );
+    }, [selectedDocument, folder.id]);
 
     const toggle = async () => {
         if (!expanded && documents.length === 0 && childFolders.length === 0) {
