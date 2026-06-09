@@ -19,6 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Three new Tauri commands: `start_mcp_server`, `stop_mcp_server`, `get_mcp_server_status`
 - **Node.js stdio MCP server** (`mcp-server/server.js`): alternative implementation for agents that require stdio transport (VS Code, Claude Desktop). Includes its own `README.md` with setup instructions.
 - `axum 0.7` and `tower-http 0.5` added to `Cargo.toml`
+- **FTS5 full-text search** on documents (`src-tauri/src/database.rs`): SQLite FTS5 virtual table with auto-sync triggers on INSERT/UPDATE/DELETE. Replaces linear `.contains()` scan in `search_documents` with indexed `MATCH` queries — O(log n) regardless of dataset size.
+- **WAL journal mode**: `PRAGMA journal_mode = WAL` enabled at init to allow concurrent reads from the MCP server while Tauri commands write.
 
 ### Changed
 - `DbState` refactored from `Mutex<Database>` to `Arc<Mutex<Database>>` (`DbArc`) to allow the MCP server to share the database handle across threads without a second connection
