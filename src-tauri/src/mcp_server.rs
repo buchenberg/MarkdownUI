@@ -368,28 +368,8 @@ fn run_tool(db: DbArc, name: &str, args: Value) -> Result<String, String> {
         }
 
         "search_documents" => {
-            let query = get_str(&args, "query")?.to_lowercase();
-            let collections = db.get_all_collections().map_err(|e| e.to_string())?;
-            let mut results: Vec<Value> = Vec::new();
-            for col in &collections {
-                let docs = db
-                    .get_documents_by_collection(col.id)
-                    .map_err(|e| e.to_string())?;
-                for doc in docs {
-                    if doc.name.to_lowercase().contains(&query)
-                        || doc.content.to_lowercase().contains(&query)
-                    {
-                        results.push(json!({
-                            "id": doc.id,
-                            "collection_id": doc.collection_id,
-                            "collection_name": col.name,
-                            "name": doc.name,
-                            "created_at": doc.created_at,
-                            "updated_at": doc.updated_at,
-                        }));
-                    }
-                }
-            }
+            let query = get_str(&args, "query")?;
+            let results = db.search_documents(&query).map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&results).unwrap())
         }
 
