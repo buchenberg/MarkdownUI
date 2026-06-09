@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
-## [Unreleased] — feature/mcp-server
+## [1.1.0] — 2026-06-09
 
 ### Added
 - **Embedded MCP Server** (`src-tauri/src/mcp_server.rs`): an axum HTTP server running at `http://localhost:3333/mcp` that exposes all collections and documents to any MCP-capable AI agent (Hermes, Claude Desktop, VS Code Copilot, Cursor, etc.)
@@ -25,6 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 - `DbState` refactored from `Mutex<Database>` to `Arc<Mutex<Database>>` (`DbArc`) to allow the MCP server to share the database handle across threads without a second connection
 - README updated with MCP server section, updated tech stack, and updated project structure tree
+- `search_documents` MCP tool now uses indexed FTS5 lookup instead of linear scan
 
 ---
 
@@ -92,7 +93,8 @@ Initial development releases establishing the core Tauri + React architecture, M
 
 ---
 
-[Unreleased]: https://github.com/buchenberg/MarkdownUI/compare/v1.0.12...HEAD
+[Unreleased]: https://github.com/buchenberg/MarkdownUI/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/buchenberg/MarkdownUI/compare/v1.0.12...v1.1.0
 [1.0.12]: https://github.com/buchenberg/MarkdownUI/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/buchenberg/MarkdownUI/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/buchenberg/MarkdownUI/compare/v1.0.9...v1.0.10
