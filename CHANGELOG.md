@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0](https://github.com/buchenberg/MarkdownUI/compare/v1.4.6...v1.5.0) (2026-06-19)
+
+### Features
+
+* add settings dialog with sidebar navigation ([#10](https://github.com/buchenberg/MarkdownUI/issues/10)) ([2c43d2c](https://github.com/buchenberg/MarkdownUI/commit/2c43d2c314e998fca6882a0fd7f3f85bae2d4b5c))
+
 ## [1.4.6](https://github.com/buchenberg/MarkdownUI/compare/v1.4.5...v1.4.6) (2026-06-19)
 
 ### Bug Fixes
