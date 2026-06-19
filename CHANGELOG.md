@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4](https://github.com/buchenberg/MarkdownUI/compare/v1.4.3...v1.4.4) (2026-06-19)
+
+### Bug Fixes
+
+* use ubuntu-24.04 with webkit2gtk-4.1 and install libsoup2.4 from jammy ([86e6cbf](https://github.com/buchenberg/MarkdownUI/commit/86e6cbf6de92243e0b024f59a43c0244c7393838))
+
 ## [1.4.3](https://github.com/buchenberg/MarkdownUI/compare/v1.4.2...v1.4.3) (2026-06-19)
 
 ### Bug Fixes
