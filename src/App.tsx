@@ -3,7 +3,10 @@ import CollectionsBrowser from "./components/CollectionsBrowser";
 import DocumentEditor from "./components/DocumentEditor";
 import ThemeToggle from "./components/ThemeToggle";
 import ZoomControls from "./components/ZoomControls";
+import SettingsModal from "./components/SettingsModal";
+import { SettingsProvider } from "./contexts/SettingsContext";
 import { useTheme } from "./ThemeContext";
+import { useSettings } from "./contexts/SettingsContext";
 import { useMcpEvents } from "./hooks/useMcpEvents";
 import * as api from "./api";
 import type { Collection, Document, ExportFormat } from "./api";
@@ -11,7 +14,7 @@ import type { Collection, Document, ExportFormat } from "./api";
 // Re-export types for components that import from App.tsx
 export type { Collection, Document };
 
-function App() {
+function AppContent() {
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
     const [collections, setCollections] = useState<Collection[]>([]);
     const [scrollToHeadingId, setScrollToHeadingId] = useState<string | null>(null);
@@ -19,7 +22,8 @@ function App() {
     const [sidebarWidth, setSidebarWidth] = useState(320); // Initial width in pixels
     const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const { theme } = useTheme();
+    const { theme, toggleTheme } = useTheme();
+    const { settingsOpen, openSettings, closeSettings } = useSettings();
 
     // Document editor state lifted to App level for unified header
     const [documentName, setDocumentName] = useState("");
@@ -425,6 +429,19 @@ function App() {
                     MCP
                 </button>
 
+                {/* Settings */}
+                <button
+                    onClick={openSettings}
+                    title="Settings"
+                    className="w-10 h-10 rounded-full flex items-center justify-center transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+                    aria-label="Open settings"
+                >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600 dark:text-gray-400">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                    </svg>
+                </button>
+
                 {/* Theme Toggle */}
                 <ThemeToggle />
             </div>
@@ -491,8 +508,27 @@ function App() {
                     )}
                 </div>
             </div>
+
+            {/* Settings Modal */}
+            <SettingsModal
+                isOpen={settingsOpen}
+                onClose={closeSettings}
+                theme={theme}
+                onThemeChange={(newTheme) => {
+                    if (newTheme !== theme) toggleTheme();
+                }}
+                mcpRunning={mcpRunning}
+                mcpPending={mcpPending}
+                onMcpToggle={handleMcpToggle}
+            />
         </div>
     );
 }
 
-export default App;
+export default function App() {
+    return (
+        <SettingsProvider>
+            <AppContent />
+        </SettingsProvider>
+    );
+}
