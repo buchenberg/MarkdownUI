@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-22.04]
+        platform: [windows-latest, macos-latest, ubuntu-24.04]
 
     runs-on: ${{ matrix.platform }}
 
@@ -34,7 +34,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev librsvg2-dev patchelf libsoup2.4-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          # Tauri v1 needs libsoup2.4 which was dropped in Ubuntu 24.04 — pull from jammy
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/libs/libsoup2.4/libsoup2.4-1_2.74.2-3_amd64.deb
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/libs/libsoup2.4/libsoup-gnome2.4-1_2.74.2-3_amd64.deb
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/libs/libsoup2.4/libsoup2.4-dev_2.74.2-3_amd64.deb
+          sudo dpkg -i libsoup2.4-1_2.74.2-3_amd64.deb libsoup-gnome2.4-1_2.74.2-3_amd64.deb libsoup2.4-dev_2.74.2-3_amd64.deb
 
       - name: Set version from tag
         shell: bash
