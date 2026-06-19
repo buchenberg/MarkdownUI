@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-24.04]
+        platform: [windows-latest, macos-latest]
 
     runs-on: ${{ matrix.platform }}
 
@@ -29,21 +29,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-          # Tauri v1 needs libsoup2.4 which was dropped in Ubuntu 24.04 — build from source
-          sudo apt-get install -y libglib2.0-dev libxml2-dev libsqlite3-dev libpsl-dev meson ninja-build
-          curl -sSLO https://download.gnome.org/sources/libsoup/2.74/libsoup-2.74.3.tar.xz
-          tar xf libsoup-2.74.3.tar.xz
-          cd libsoup-2.74.3
-          meson setup _build -Dvapi=disabled -Dgssapi=disabled -Dsysprof=disabled -Dtls_check=false -Dintrospection=disabled
-          ninja -C _build
-          sudo ninja -C _build install
-          sudo ldconfig
 
       - name: Set version from tag
         shell: bash
