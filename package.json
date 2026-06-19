@@ -1,6 +1,6 @@
 {
   "name": "markdown-ui",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Markdown document viewer and editor with Mermaid support for Tauri",
   "type": "module",
   "scripts": {

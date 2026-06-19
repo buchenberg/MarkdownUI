@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2](https://github.com/buchenberg/MarkdownUI/compare/v1.4.1...v1.4.2) (2026-06-19)
+
+### Bug Fixes
+
+* configure git remote with PAT for tag push triggering ([dc9a54d](https://github.com/buchenberg/MarkdownUI/commit/dc9a54dede1be3b69b80e9cb56f7c9a8d4a132de))
+
 ## [1.4.1](https://github.com/buchenberg/MarkdownUI/compare/v1.4.0...v1.4.1) (2026-06-19)
 
 ### Bug Fixes
