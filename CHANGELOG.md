@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.6](https://github.com/buchenberg/MarkdownUI/compare/v1.4.5...v1.4.6) (2026-06-19)
+
+### Bug Fixes
+
+* drop Linux from release matrix ([5abd572](https://github.com/buchenberg/MarkdownUI/commit/5abd57280bea5c1f3e9e945cc8202d77564dcd3b))
+
 ## [1.4.5](https://github.com/buchenberg/MarkdownUI/compare/v1.4.4...v1.4.5) (2026-06-19)
 
 ### Bug Fixes
