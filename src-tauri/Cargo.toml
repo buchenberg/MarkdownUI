@@ -11,7 +11,7 @@ edition = "2021"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "fs-create-dir", "fs-remove-dir", "fs-read-file", "fs-remove-file", "fs-write-file", "fs-read-dir", "fs-exists", "shell-open", "dialog-save", "path-all"] }
+tauri = { version = "1.5", features = [ "dialog-open", "dialog-message", "dialog-confirm", "dialog-ask", "fs-create-dir", "fs-remove-dir", "fs-read-file", "fs-remove-file", "fs-write-file", "fs-read-dir", "fs-exists", "shell-open", "dialog-save", "path-all"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
