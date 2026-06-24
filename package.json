@@ -9,7 +9,6 @@
     "build": "npm run build:frontend && npm run tauri build",
     "build:frontend": "vite build",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "release": "node scripts/release.cjs patch",
     "release:patch": "node scripts/release.cjs patch",
