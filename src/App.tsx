@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import CollectionsBrowser from "./components/CollectionsBrowser";
+import FilesystemBrowser from "./components/FilesystemBrowser";
 import DocumentEditor from "./components/DocumentEditor";
 import ThemeToggle from "./components/ThemeToggle";
 import ZoomControls from "./components/ZoomControls";
@@ -9,7 +10,7 @@ import { useTheme } from "./ThemeContext";
 import { useSettings } from "./contexts/SettingsContext";
 import { useMcpEvents } from "./hooks/useMcpEvents";
 import * as api from "./api";
-import type { Collection, Document, ExportFormat } from "./api";
+import type { Collection, Document, ExportFormat, TreeNode } from "./api";
 
 // Re-export types for components that import from App.tsx
 export type { Collection, Document };
@@ -36,6 +37,14 @@ function AppContent() {
         return saved ? saved === "true" : false;
     });
 
+    // Storage type
+    const [storageType, setStorageTypeState] = useState<"sqlite" | "filesystem">("sqlite");
+    const [storagePending, setStoragePending] = useState(false);
+
+    // Workspace roots (filesystem mode)
+    const [workspaceRoots, setWorkspaceRoots] = useState<TreeNode[]>([]);
+    const [selectedFsDoc, setSelectedFsDoc] = useState<TreeNode | null>(null);
+
     // MCP server state
     const [mcpRunning, setMcpRunning] = useState(false);
     const [mcpPending, setMcpPending] = useState(false);
@@ -60,24 +69,37 @@ function AppContent() {
         });
     }, [animatingIds, selectedDocument?.id, mcpRunning]);
 
-    useEffect(() => {
-        // Check initial MCP server status on mount
-        api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
-    }, []);
-
-    useEffect(() => {
-        fetchCollections();
-    }, []);
-
-    // Sync document state when selected document changes
+    // Sync SQLite document state when selected document changes
     useEffect(() => {
         if (selectedDocument) {
+            setSelectedFsDoc(null);
             setDocumentName(selectedDocument.name);
             setDocumentContent(selectedDocument.content);
             setHasChanges(false);
             setHasNameChanges(false);
         }
     }, [selectedDocument]);
+
+    useEffect(() => {
+        // Check initial MCP server status on mount
+        api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
+        // Load storage type
+        api.getStorageType().then((t) => {
+            setStorageTypeState(t);
+            if (t === "filesystem") fetchWorkspaceRoots();
+        }).catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        fetchCollections();
+    }, []);
+
+    // When storage type changes to filesystem, refresh roots
+    useEffect(() => {
+        if (storageType === "filesystem") {
+            fetchWorkspaceRoots();
+        }
+    }, [storageType]);
 
     // Sidebar resize handling
     useEffect(() => {
@@ -121,8 +143,27 @@ function AppContent() {
         }
     };
 
+    const fetchWorkspaceRoots = async () => {
+        try {
+            const roots = await api.listRoots();
+            setWorkspaceRoots(roots);
+        } catch (error) {
+            console.error("Failed to fetch workspace roots:", error);
+        }
+    };
+
     const handleDocumentSelect = (document: Document) => {
         setSelectedDocument(document);
+        setSelectedFsDoc(null);
+    };
+
+    const handleFsDocumentSelect = (fsDoc: TreeNode) => {
+        setSelectedFsDoc(fsDoc);
+        setSelectedDocument(null);
+        setDocumentName(fsDoc.name);
+        setDocumentContent(fsDoc.content || "");
+        setHasChanges(false);
+        setHasNameChanges(false);
     };
 
     const handleDocumentCreate = async (
@@ -152,6 +193,21 @@ function AppContent() {
             return updatedDocument;
         } catch (error) {
             console.error("Failed to update document:", error);
+            throw error;
+        }
+    };
+
+    const handleFsDocumentUpdate = async (
+        id: string,
+        name: string,
+        content: string,
+    ) => {
+        try {
+            const updated = await api.updateDoc(id, name, content);
+            setSelectedFsDoc(updated);
+            return updated;
+        } catch (error) {
+            console.error("Failed to update filesystem document:", error);
             throw error;
         }
     };
@@ -224,6 +280,16 @@ function AppContent() {
     };
 
     const handleSave = async () => {
+        if (selectedFsDoc) {
+            try {
+                await handleFsDocumentUpdate(selectedFsDoc.id, documentName, documentContent);
+                setHasChanges(false);
+                setHasNameChanges(false);
+            } catch {
+                alert("Failed to save document");
+            }
+            return;
+        }
         if (!selectedDocument) return;
         try {
             await handleDocumentUpdate(selectedDocument.id, documentName, documentContent);
@@ -244,28 +310,55 @@ function AppContent() {
         setScrollToHeadingId(headingId);
     };
 
+    const handleFsHeadingClick = async (docId: string, headingId: string) => {
+        try {
+            const entry = await api.getEntry(docId);
+            if (entry) {
+                setSelectedFsDoc(entry);
+                setSelectedDocument(null);
+                setDocumentName(entry.name);
+                setDocumentContent(entry.content || "");
+                setHasChanges(false);
+                setHasNameChanges(false);
+                setScrollToHeadingId(headingId);
+            }
+        } catch (err) {
+            console.error("Failed to load document for heading:", err);
+        }
+    };
+
     const handleHeadingScrolled = () => {
         setScrollToHeadingId(null);
     };
 
     // Auto-save effect
     useEffect(() => {
-        if (!selectedDocument || !hasChanges || !autoSaveEnabled) return;
-        const contentChanged = documentContent !== selectedDocument.content;
+        if (!hasChanges || !autoSaveEnabled) return;
+        const isFs = storageType === "filesystem" && selectedFsDoc;
+        const isSqlite = !!selectedDocument;
+
+        if (!isFs && !isSqlite) return;
+
+        const contentChanged = isFs
+            ? documentContent !== (selectedFsDoc?.content || "")
+            : documentContent !== selectedDocument?.content;
+
         if (!contentChanged) return;
 
         const timer = setTimeout(async () => {
             try {
-                await handleDocumentUpdate(selectedDocument.id, selectedDocument.name, documentContent);
-                if (!hasNameChanges) {
-                    setHasChanges(false);
+                if (isFs && selectedFsDoc) {
+                    await handleFsDocumentUpdate(selectedFsDoc.id, selectedFsDoc.name, documentContent);
+                } else if (selectedDocument) {
+                    await handleDocumentUpdate(selectedDocument.id, selectedDocument.name, documentContent);
                 }
+                if (!hasNameChanges) setHasChanges(false);
             } catch (error) {
                 console.error("Auto-save failed:", error);
             }
         }, 2000);
         return () => clearTimeout(timer);
-    }, [documentContent, hasChanges, autoSaveEnabled, selectedDocument?.id]);
+    }, [documentContent, hasChanges, autoSaveEnabled, selectedDocument?.id, selectedFsDoc?.id, storageType]);
 
     // Zoom handlers
     const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.1, 3.0));
@@ -288,6 +381,49 @@ function AppContent() {
             alert(`MCP server error: ${error}`);
         } finally {
             setMcpPending(false);
+        }
+    };
+
+    // Storage type change
+    const handleStorageTypeChange = async (newType: "sqlite" | "filesystem") => {
+        if (newType === storageType) return;
+        setStoragePending(true);
+        try {
+            await api.setStorageType(newType);
+            setStorageTypeState(newType);
+            alert(
+                `Storage type changed to ${newType}. Please restart the application for the change to take effect.`,
+            );
+        } catch (error) {
+            console.error("Failed to change storage type:", error);
+            alert(`Failed to change storage type: ${error}`);
+        } finally {
+            setStoragePending(false);
+        }
+    };
+
+    // Workspace root management
+    const handleAddWorkspaceRoot = async () => {
+        try {
+            const dirPath = await api.pickDirectory();
+            if (!dirPath) return;
+            const parts = dirPath.replace(/\\/g, "/").split("/");
+            const name = parts[parts.length - 1] || dirPath;
+            await api.addRoot(name, dirPath);
+            await fetchWorkspaceRoots();
+        } catch (error) {
+            console.error("Failed to add workspace root:", error);
+            alert(`Failed to add workspace root: ${error}`);
+        }
+    };
+
+    const handleRemoveWorkspaceRoot = async (id: string) => {
+        try {
+            await api.removeRoot(id);
+            await fetchWorkspaceRoots();
+        } catch (error) {
+            console.error("Failed to remove workspace root:", error);
+            alert(`Failed to remove workspace root: ${error}`);
         }
     };
 
@@ -345,7 +481,7 @@ function AppContent() {
                 </button>
 
                 {/* Document Name Input */}
-                {selectedDocument ? (
+                {(selectedDocument || selectedFsDoc) ? (
                     <>
                         <input
                             type="text"
@@ -455,20 +591,31 @@ function AppContent() {
                             style={{ width: sidebarWidth }}
                             className={`flex-shrink-0 overflow-hidden ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'}`}
                         >
-                            <CollectionsBrowser
-                                collections={collections}
-                                selectedDocument={selectedDocument}
-                                onDocumentSelect={handleDocumentSelect}
-                                onDocumentCreate={handleDocumentCreate}
-                                onDocumentDelete={handleDocumentDelete}
-                                onCollectionCreate={handleCollectionCreate}
-                                onCollectionDelete={handleCollectionDelete}
-                                onFolderCreate={handleFolderCreate}
-                                onFolderDelete={handleFolderDelete}
-                                onHeadingClick={handleHeadingClick}
-                                mcpAnimatingIds={animatingIds}
-                                lastMcpEvents={lastEvents}
-                            />
+                            {storageType === "filesystem" ? (
+                                <FilesystemBrowser
+                                    roots={workspaceRoots}
+                                    selectedDocId={selectedFsDoc?.id ?? null}
+                                    onDocumentSelect={handleFsDocumentSelect}
+                                    onHeadingClick={handleFsHeadingClick}
+                                    onRootsChanged={fetchWorkspaceRoots}
+                                />
+                            ) : (
+                                <CollectionsBrowser
+                                    collections={collections}
+                                    selectedDocument={selectedDocument}
+                                    onDocumentSelect={handleDocumentSelect}
+                                    onDocumentCreate={handleDocumentCreate}
+                                    onDocumentDelete={handleDocumentDelete}
+                                    onCollectionCreate={handleCollectionCreate}
+                                    onCollectionDelete={handleCollectionDelete}
+                                    onFolderCreate={handleFolderCreate}
+                                    onFolderDelete={handleFolderDelete}
+                                    onHeadingClick={handleHeadingClick}
+                                    mcpAnimatingIds={animatingIds}
+                                    lastMcpEvents={lastEvents}
+                                    storageType={storageType}
+                                />
+                            )}
                         </div>
                         {/* Thin resize divider */}
                         <div
@@ -488,7 +635,7 @@ function AppContent() {
 
                 {/* Editor/Preview Area */}
                 <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-white dark:bg-gray-900">
-                    {selectedDocument ? (
+                    {(selectedDocument || selectedFsDoc) ? (
                         <DocumentEditor
                             content={documentContent}
                             onContentChange={handleContentChange}
@@ -520,6 +667,12 @@ function AppContent() {
                 mcpRunning={mcpRunning}
                 mcpPending={mcpPending}
                 onMcpToggle={handleMcpToggle}
+                storageType={storageType}
+                storagePending={storagePending}
+                onStorageTypeChange={handleStorageTypeChange}
+                workspaceRoots={workspaceRoots}
+                onAddWorkspaceRoot={handleAddWorkspaceRoot}
+                onRemoveWorkspaceRoot={handleRemoveWorkspaceRoot}
             />
         </div>
     );

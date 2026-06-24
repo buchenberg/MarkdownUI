@@ -19,7 +19,11 @@
       },
       "dialog": {
         "all": false,
-        "save": true
+        "save": true,
+        "open": true,
+        "ask": true,
+        "confirm": true,
+        "message": true
       },
       "fs": {
         "all": false,
@@ -34,7 +38,8 @@
           "$APPDATA/**",
           "$HOME/**",
           "$DOCUMENT/**",
-          "$DESKTOP/**"
+          "$DESKTOP/**",
+          "**"
         ]
       },
       "path": {

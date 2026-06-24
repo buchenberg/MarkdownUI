@@ -1,0 +1,652 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
+
+use crate::config::StorageConfig;
+use crate::storage::{StorageBackend, TreeNode, TreeNodeKind};
+
+pub struct FilesystemStorage {
+    config: Arc<RwLock<StorageConfig>>,
+    config_dir: PathBuf,
+}
+
+impl FilesystemStorage {
+    pub fn new(config: Arc<RwLock<StorageConfig>>, config_dir: PathBuf) -> Self {
+        FilesystemStorage { config, config_dir }
+    }
+
+    fn workspaces(&self) -> Vec<(String, PathBuf)> {
+        self.config
+            .read()
+            .map(|cfg| {
+                cfg.workspaces
+                    .iter()
+                    .map(|w| (w.name.clone(), w.path.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn workspace_root(&self, index: usize) -> Option<(String, PathBuf)> {
+        let ws = self.workspaces();
+        ws.get(index).cloned()
+    }
+
+    fn resolve_path(&self, id: &str) -> Result<PathBuf, String> {
+        if let Some(stripped) = id.strip_prefix("fs:") {
+            let index: usize = stripped
+                .parse()
+                .map_err(|_| format!("Invalid workspace root ID: {}", id))?;
+            let (_name, path) = self
+                .workspace_root(index)
+                .ok_or_else(|| format!("Workspace root not found: {}", id))?;
+            Ok(path)
+        } else {
+            Ok(PathBuf::from(id))
+        }
+    }
+
+    fn is_hidden(entry: &fs::DirEntry) -> bool {
+        entry
+            .file_name()
+            .to_str()
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+    }
+
+    fn fmt_timestamp(t: SystemTime) -> String {
+        use std::time::UNIX_EPOCH;
+        let dur = t.duration_since(UNIX_EPOCH).unwrap_or_default();
+        let secs = dur.as_secs();
+        let days = secs / 86400;
+        let time_secs = secs % 86400;
+        let hours = time_secs / 3600;
+        let mins = (time_secs % 3600) / 60;
+        let secs_rem = time_secs % 60;
+        let (y, m, d) = civil_from_days(days as i64 + 719468);
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            y, m, d, hours, mins, secs_rem
+        )
+    }
+
+    fn metadata_to_timestamps(meta: &fs::Metadata) -> (String, String) {
+        let created = meta
+            .created()
+            .map(Self::fmt_timestamp)
+            .unwrap_or_else(|_| String::new());
+        let modified = meta
+            .modified()
+            .map(Self::fmt_timestamp)
+            .unwrap_or_else(|_| String::new());
+        (created, modified)
+    }
+
+    fn entry_to_treenode(
+        entry: &fs::DirEntry,
+        parent_id: &str,
+    ) -> Result<Option<TreeNode>, String> {
+        let file_type = entry.file_type().map_err(|e| format!("I/O error: {}", e))?;
+        let path = entry.path();
+        let meta = entry.metadata().map_err(|e| format!("I/O error: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+
+        if file_type.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            Ok(Some(TreeNode {
+                id: path.to_string_lossy().to_string(),
+                parent_id: Some(parent_id.to_string()),
+                name,
+                kind: TreeNodeKind::Folder,
+                content: None,
+                created_at,
+                updated_at,
+            }))
+        } else if file_type.is_file() {
+            let raw_name = entry.file_name().to_string_lossy().to_string();
+            if raw_name.ends_with(".md") {
+                let name = raw_name.strip_suffix(".md").unwrap_or(&raw_name).to_string();
+                Ok(Some(TreeNode {
+                    id: path.to_string_lossy().to_string(),
+                    parent_id: Some(parent_id.to_string()),
+                    name,
+                    kind: TreeNodeKind::Document,
+                    content: None,
+                    created_at,
+                    updated_at,
+                }))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+// ── StorageBackend implementation ────────────────────────────────────────────
+
+impl StorageBackend for FilesystemStorage {
+    fn list_roots(&self) -> Result<Vec<TreeNode>, String> {
+        self.workspaces()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, path))| {
+                let (created_at, updated_at) = match fs::metadata(&path) {
+                    Ok(meta) => Self::metadata_to_timestamps(&meta),
+                    Err(_) => (String::new(), String::new()),
+                };
+                Ok(TreeNode {
+                    id: format!("fs:{}", i),
+                    parent_id: None,
+                    name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at,
+                    updated_at,
+                })
+            })
+            .collect()
+    }
+
+    fn add_root(&self, name: &str, extra: Option<&str>) -> Result<TreeNode, String> {
+        let path = match extra {
+            Some(p) if !p.is_empty() => PathBuf::from(p),
+            _ => {
+                return Err(
+                    "Filesystem mode requires a directory path (extra parameter)".into(),
+                )
+            }
+        };
+
+        if !path.is_dir() {
+            return Err(format!("Path is not a directory: {}", path.display()));
+        }
+
+        let mut cfg = self.config.write().map_err(|e| e.to_string())?;
+        cfg.add_workspace(name, path.clone());
+        cfg.save(&self.config_dir)?;
+
+        let index = cfg.workspaces.len() - 1;
+        let (created_at, updated_at) = match fs::metadata(&path) {
+            Ok(meta) => Self::metadata_to_timestamps(&meta),
+            Err(_) => (String::new(), String::new()),
+        };
+
+        Ok(TreeNode {
+            id: format!("fs:{}", index),
+            parent_id: None,
+            name: name.to_string(),
+            kind: TreeNodeKind::Folder,
+            content: None,
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn remove_root(&self, id: &str) -> Result<bool, String> {
+        let index = id
+            .strip_prefix("fs:")
+            .and_then(|s| s.parse::<usize>().ok())
+            .ok_or_else(|| format!("Invalid workspace root ID: {}", id))?;
+
+        let mut cfg = self.config.write().map_err(|e| e.to_string())?;
+        if !cfg.remove_workspace(index) {
+            return Err(format!("Workspace root not found: {}", id));
+        }
+        cfg.save(&self.config_dir)?;
+        Ok(true)
+    }
+
+    fn get_entry(&self, id: &str) -> Result<Option<TreeNode>, String> {
+        if id.starts_with("fs:") {
+            let index = id
+                .strip_prefix("fs:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .ok_or_else(|| format!("Invalid workspace root ID: {}", id))?;
+            let ws = self
+                .workspace_root(index)
+                .ok_or_else(|| format!("Workspace root not found: {}", id))?;
+            let (created_at, updated_at) = match fs::metadata(&ws.1) {
+                Ok(meta) => Self::metadata_to_timestamps(&meta),
+                Err(_) => (String::new(), String::new()),
+            };
+            return Ok(Some(TreeNode {
+                id: id.to_string(),
+                parent_id: None,
+                name: ws.0,
+                kind: TreeNodeKind::Folder,
+                content: None,
+                created_at,
+                updated_at,
+            }));
+        }
+
+        let path = PathBuf::from(id);
+        let meta = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => return Ok(None),
+        };
+
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let parent_id = path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string());
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+
+        if meta.is_dir() {
+            Ok(Some(TreeNode {
+                id: path.to_string_lossy().to_string(),
+                parent_id,
+                name,
+                kind: TreeNodeKind::Folder,
+                content: None,
+                created_at,
+                updated_at,
+            }))
+        } else {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+            let display_name = if name.ends_with(".md") {
+                name.strip_suffix(".md").unwrap_or(&name).to_string()
+            } else {
+                name
+            };
+            Ok(Some(TreeNode {
+                id: path.to_string_lossy().to_string(),
+                parent_id,
+                name: display_name,
+                kind: TreeNodeKind::Document,
+                content: Some(content),
+                created_at,
+                updated_at,
+            }))
+        }
+    }
+
+    fn list_children(&self, parent_id: &str) -> Result<Vec<TreeNode>, String> {
+        let dir_path = self.resolve_path(parent_id)?;
+
+        if !dir_path.is_dir() {
+            return Err(format!("Not a directory: {}", dir_path.display()));
+        }
+
+        let mut children: Vec<TreeNode> = Vec::new();
+
+        let entries = fs::read_dir(&dir_path)
+            .map_err(|e| format!("Failed to read directory {}: {}", dir_path.display(), e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("I/O error: {}", e))?;
+            if Self::is_hidden(&entry) {
+                continue;
+            }
+            if let Some(node) = Self::entry_to_treenode(&entry, parent_id)? {
+                children.push(node);
+            }
+        }
+
+        children.sort_by(|a, b| {
+            a.kind
+                .cmp(&b.kind)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        Ok(children)
+    }
+
+    fn create_folder(&self, parent_id: &str, name: &str) -> Result<TreeNode, String> {
+        let parent_path = self.resolve_path(parent_id)?;
+        let new_path = parent_path.join(name);
+
+        fs::create_dir(&new_path)
+            .map_err(|e| format!("Failed to create directory {}: {}", new_path.display(), e))?;
+
+        let meta = fs::metadata(&new_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+
+        Ok(TreeNode {
+            id: new_path.to_string_lossy().to_string(),
+            parent_id: Some(parent_id.to_string()),
+            name: name.to_string(),
+            kind: TreeNodeKind::Folder,
+            content: None,
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn create_document(
+        &self,
+        parent_id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<TreeNode, String> {
+        let parent_path = self.resolve_path(parent_id)?;
+        let filename = if name.ends_with(".md") {
+            name.to_string()
+        } else {
+            format!("{}.md", name)
+        };
+        let new_path = parent_path.join(&filename);
+
+        fs::write(&new_path, content)
+            .map_err(|e| format!("Failed to write {}: {}", new_path.display(), e))?;
+
+        let meta = fs::metadata(&new_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+        let display_name = filename
+            .strip_suffix(".md")
+            .unwrap_or(&filename)
+            .to_string();
+
+        Ok(TreeNode {
+            id: new_path.to_string_lossy().to_string(),
+            parent_id: Some(parent_id.to_string()),
+            name: display_name,
+            kind: TreeNodeKind::Document,
+            content: Some(content.to_string()),
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn update_document(
+        &self,
+        id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<TreeNode, String> {
+        let old_path = PathBuf::from(id);
+        if !old_path.is_file() {
+            return Err(format!("Not a file: {}", old_path.display()));
+        }
+
+        let new_filename = if name.ends_with(".md") {
+            name.to_string()
+        } else {
+            format!("{}.md", name)
+        };
+
+        let new_path = if let Some(parent) = old_path.parent() {
+            parent.join(&new_filename)
+        } else {
+            PathBuf::from(&new_filename)
+        };
+
+        if new_path != old_path {
+            fs::rename(&old_path, &new_path).map_err(|e| {
+                format!(
+                    "Failed to rename {} to {}: {}",
+                    old_path.display(),
+                    new_path.display(),
+                    e
+                )
+            })?;
+        }
+
+        fs::write(&new_path, content)
+            .map_err(|e| format!("Failed to write {}: {}", new_path.display(), e))?;
+
+        let meta = fs::metadata(&new_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+        let display_name = name.to_string();
+
+        Ok(TreeNode {
+            id: new_path.to_string_lossy().to_string(),
+            parent_id: new_path
+                .parent()
+                .map(|p| p.to_string_lossy().to_string()),
+            name: display_name,
+            kind: TreeNodeKind::Document,
+            content: Some(content.to_string()),
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn rename_entry(&self, id: &str, new_name: &str) -> Result<TreeNode, String> {
+        let old_path = PathBuf::from(id);
+
+        let (_is_dir, is_file) = if let Ok(meta) = fs::metadata(&old_path) {
+            (meta.is_dir(), meta.is_file())
+        } else {
+            return Err(format!("Entry not found: {}", old_path.display()));
+        };
+
+        let new_path = if let Some(parent) = old_path.parent() {
+            if is_file {
+                let filename = if new_name.ends_with(".md") {
+                    new_name.to_string()
+                } else {
+                    format!("{}.md", new_name)
+                };
+                parent.join(&filename)
+            } else {
+                parent.join(new_name)
+            }
+        } else {
+            return Err("Cannot rename root entry".into());
+        };
+
+        fs::rename(&old_path, &new_path).map_err(|e| {
+            format!(
+                "Failed to rename {} to {}: {}",
+                old_path.display(),
+                new_path.display(),
+                e
+            )
+        })?;
+
+        let meta = fs::metadata(&new_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+
+        Ok(TreeNode {
+            id: new_path.to_string_lossy().to_string(),
+            parent_id: new_path
+                .parent()
+                .map(|p| p.to_string_lossy().to_string()),
+            name: new_name.to_string(),
+            kind: if meta.is_dir() {
+                TreeNodeKind::Folder
+            } else {
+                TreeNodeKind::Document
+            },
+            content: None,
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn delete_entry(&self, id: &str) -> Result<bool, String> {
+        let path = PathBuf::from(id);
+
+        let meta = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => return Ok(false),
+        };
+
+        if meta.is_dir() {
+            fs::remove_dir_all(&path)
+                .map_err(|e| format!("Failed to remove directory: {}", e))?;
+        } else {
+            fs::remove_file(&path)
+                .map_err(|e| format!("Failed to remove file: {}", e))?;
+        }
+
+        Ok(true)
+    }
+
+    fn move_entry(&self, id: &str, new_parent_id: &str) -> Result<TreeNode, String> {
+        let old_path = PathBuf::from(id);
+
+        let is_dir = fs::metadata(&old_path)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+
+        let dest_dir = self.resolve_path(new_parent_id)?;
+        let file_name = old_path
+            .file_name()
+            .ok_or_else(|| format!("Invalid source path: {}", old_path.display()))?;
+        let new_path = dest_dir.join(file_name);
+
+        fs::rename(&old_path, &new_path).map_err(|e| {
+            format!(
+                "Failed to move {} to {}: {}",
+                old_path.display(),
+                new_path.display(),
+                e
+            )
+        })?;
+
+        let meta = fs::metadata(&new_path)
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+        let name = new_path
+            .file_name()
+            .map(|n| {
+                let s = n.to_string_lossy().to_string();
+                if s.ends_with(".md") {
+                    s.strip_suffix(".md").unwrap_or(&s).to_string()
+                } else {
+                    s
+                }
+            })
+            .unwrap_or_default();
+
+        Ok(TreeNode {
+            id: new_path.to_string_lossy().to_string(),
+            parent_id: Some(new_parent_id.to_string()),
+            name,
+            kind: if is_dir {
+                TreeNodeKind::Folder
+            } else {
+                TreeNodeKind::Document
+            },
+            content: None,
+            created_at,
+            updated_at,
+        })
+    }
+
+    fn search(&self, query: &str) -> Result<Vec<TreeNode>, String> {
+        let lower_query = query.to_lowercase();
+        let mut results: Vec<TreeNode> = Vec::new();
+
+        for (root_idx, (_name, root_path)) in self.workspaces().into_iter().enumerate() {
+            if !root_path.is_dir() {
+                continue;
+            }
+            let root_id = format!("fs:{}", root_idx);
+            walk_for_search(&root_path, &root_id, &lower_query, &mut results)?;
+        }
+
+        Ok(results)
+    }
+
+    fn export_root_to_filesystem(
+        &self,
+        _root_id: &str,
+        _target_path: &Path,
+    ) -> Result<(), String> {
+        Err("Export not applicable — filesystem storage already uses the filesystem".into())
+    }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = y + if m <= 2 { 1 } else { 0 };
+    (y, m, d)
+}
+
+fn walk_for_search(
+    dir: &Path,
+    parent_id: &str,
+    query: &str,
+    results: &mut Vec<TreeNode>,
+) -> Result<(), String> {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+
+        if file_type.is_dir() {
+            let child_id = path.to_string_lossy().to_string();
+            walk_for_search(&path, &child_id, query, results)?;
+        } else if file_type.is_file() {
+            let lower_name = file_name.to_lowercase();
+            // Check filename match
+            let name_match = lower_name.contains(query);
+            // Check content match
+            let content_match = if !name_match {
+                match fs::read_to_string(&path) {
+                    Ok(c) => c.to_lowercase().contains(query),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            };
+
+            if name_match || content_match {
+                if file_name.ends_with(".md") {
+                    let meta = match entry.metadata() {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    let (created_at, updated_at) =
+                        FilesystemStorage::metadata_to_timestamps(&meta);
+                    let name = file_name
+                        .strip_suffix(".md")
+                        .unwrap_or(&file_name)
+                        .to_string();
+                    results.push(TreeNode {
+                        id: path.to_string_lossy().to_string(),
+                        parent_id: Some(parent_id.to_string()),
+                        name,
+                        kind: TreeNodeKind::Document,
+                        content: None,
+                        created_at,
+                        updated_at,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

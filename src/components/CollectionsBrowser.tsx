@@ -23,6 +23,7 @@ interface CollectionsBrowserProps {
     onHeadingClick: (document: Document, headingId: string) => void;
     mcpAnimatingIds?: Set<number>;
     lastMcpEvents?: McpEventDetail[];
+    storageType?: "sqlite" | "filesystem";
 }
 
 export default function CollectionsBrowser({
@@ -38,6 +39,7 @@ export default function CollectionsBrowser({
     onHeadingClick,
     mcpAnimatingIds,
     lastMcpEvents,
+    storageType,
 }: CollectionsBrowserProps) {
     const [expandedCollections, setExpandedCollections] = useState<Set<number>>(new Set());
     const [documentsByCollection, setDocumentsByCollection] = useState<Map<number, Document[]>>(new Map());
@@ -361,7 +363,7 @@ export default function CollectionsBrowser({
             <div className="flex-1 overflow-y-auto py-1">
                 {collections.length === 0 && (
                     <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
-                        No collections yet
+                        {storageType === "filesystem" ? "No workspace roots yet" : "No collections yet"}
                     </div>
                 )}
 
