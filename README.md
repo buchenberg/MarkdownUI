@@ -2,6 +2,8 @@
 
 A Markdown document viewer and editor with embedded Mermaid diagram support, built with Tauri + React.
 
+![MarkdownUI Screenshot](./docs/MarkdownUI_Windows_Screenshot.png)
+
 ## Features
 
 - **Markdown Editor**: Full-featured Monaco editor with custom dark blue theme
@@ -166,7 +168,9 @@ Add to Cline's MCP settings (`cline_mcp_settings.json`):
   "mcpServers": {
     "markdownui": {
       "url": "http://localhost:3333/mcp",
-      "type": "http"
+      "type": "streamableHttp",
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }

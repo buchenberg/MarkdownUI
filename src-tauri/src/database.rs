@@ -1,7 +1,9 @@
 use rusqlite::{Connection, Result as SqliteResult, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use crate::storage::{StorageBackend, TreeNode, TreeNodeKind};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Collection {
@@ -558,5 +560,536 @@ impl Database {
         .collect::<SqliteResult<Vec<_>>>()?;
 
         Ok(results)
+    }
+
+    /// Recursively export collection contents to a directory on disk.
+    pub fn export_collection_contents(&self, collection_id: i64, dir: &Path) -> SqliteResult<()> {
+        let folders = self.get_folders_by_collection(collection_id)?;
+        let root_folders: Vec<_> = folders.iter().filter(|f| f.parent_folder_id.is_none()).collect();
+        let docs = self.get_documents_by_collection(collection_id)?;
+        let root_docs: Vec<_> = docs.iter().filter(|d| d.folder_id.is_none()).collect();
+
+        for doc in &root_docs {
+            let file_path = dir.join(sanitize_filename(&doc.name, "md"));
+            std::fs::write(&file_path, &doc.content)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to write {}: {}", file_path.display(), e)),
+                ))?;
+        }
+
+        for folder in &root_folders {
+            let sub_dir = dir.join(sanitize_filename(&folder.name, ""));
+            std::fs::create_dir_all(&sub_dir)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to create {}: {}", sub_dir.display(), e)),
+                ))?;
+            self.export_folder_contents(folder.id, &sub_dir)?;
+        }
+
+        Ok(())
+    }
+
+    fn export_folder_contents(&self, folder_id: i64, dir: &Path) -> SqliteResult<()> {
+        let child_folders = self.get_folders_by_parent(folder_id)?;
+        let docs = self.get_documents_by_folder(folder_id)?;
+
+        for doc in &docs {
+            let file_path = dir.join(sanitize_filename(&doc.name, "md"));
+            std::fs::write(&file_path, &doc.content)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to write {}: {}", file_path.display(), e)),
+                ))?;
+        }
+
+        for folder in &child_folders {
+            let sub_dir = dir.join(sanitize_filename(&folder.name, ""));
+            std::fs::create_dir_all(&sub_dir)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to create {}: {}", sub_dir.display(), e)),
+                ))?;
+            self.export_folder_contents(folder.id, &sub_dir)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Convert a name to a filesystem-safe filename, appending extension if provided.
+fn sanitize_filename(name: &str, ext: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let trimmed = safe.trim();
+    if trimmed.is_empty() {
+        return format!("untitled.{}", ext);
+    }
+    if ext.is_empty() {
+        trimmed.to_string()
+    } else {
+        format!("{}.{}", trimmed, ext)
+    }
+}
+
+// ── ID helpers ────────────────────────────────────────────────────────────────
+
+fn col_id(id: i64) -> String { format!("col:{}", id) }
+fn fld_id(id: i64) -> String { format!("fld:{}", id) }
+fn doc_id(id: i64) -> String { format!("doc:{}", id) }
+
+fn parse_prefixed_id(id: &str) -> Option<(char, i64)> {
+    let (prefix, num) = id.split_once(':')?;
+    Some((prefix.chars().next()?, num.parse().ok()?))
+}
+
+fn require_prefix(id: &str, expected: char) -> Result<i64, String> {
+    let (prefix, n) = parse_prefixed_id(id)
+        .ok_or_else(|| format!("Invalid ID format: {}", id))?;
+    if prefix != expected {
+        return Err(format!("Expected {} ID, got {}: {}", expected, prefix, id));
+    }
+    Ok(n)
+}
+
+// ── StorageBackend trait implementation ────────────────────────────────────────
+
+impl StorageBackend for Database {
+    fn list_roots(&self) -> Result<Vec<TreeNode>, String> {
+        let collections = self.get_all_collections().map_err(|e| e.to_string())?;
+        collections
+            .into_iter()
+            .map(|c| {
+                Ok(TreeNode {
+                    id: col_id(c.id),
+                    parent_id: None,
+                    name: c.name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at: c.created_at,
+                    updated_at: c.updated_at,
+                })
+            })
+            .collect()
+    }
+
+    fn add_root(&self, name: &str, extra: Option<&str>) -> Result<TreeNode, String> {
+        let c = self
+            .create_collection(name.to_string(), extra.map(|s| s.to_string()))
+            .map_err(|e| e.to_string())?;
+        Ok(TreeNode {
+            id: col_id(c.id),
+            parent_id: None,
+            name: c.name,
+            kind: TreeNodeKind::Folder,
+            content: None,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        })
+    }
+
+    fn remove_root(&self, id: &str) -> Result<bool, String> {
+        let n = require_prefix(id, 'c')?;
+        self.delete_collection(n).map_err(|e| e.to_string())
+    }
+
+    fn get_entry(&self, id: &str) -> Result<Option<TreeNode>, String> {
+        let (prefix, n) = match parse_prefixed_id(id) {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+        match prefix {
+            'c' => self
+                .get_collection(n)
+                .map_err(|e| e.to_string())
+                .map(|opt| {
+                    opt.map(|c| TreeNode {
+                        id: col_id(c.id),
+                        parent_id: None,
+                        name: c.name,
+                        kind: TreeNodeKind::Folder,
+                        content: None,
+                        created_at: c.created_at,
+                        updated_at: c.updated_at,
+                    })
+                }),
+            'f' => self
+                .get_folder(n)
+                .map_err(|e| e.to_string())
+                .map(|opt| {
+                    opt.map(|f| TreeNode {
+                        id: fld_id(f.id),
+                        parent_id: f.parent_folder_id.map(|pid| fld_id(pid)),
+                        name: f.name,
+                        kind: TreeNodeKind::Folder,
+                        content: None,
+                        created_at: f.created_at,
+                        updated_at: f.updated_at,
+                    })
+                }),
+            'd' => self
+                .get_document(n)
+                .map_err(|e| e.to_string())
+                .map(|opt| {
+                    opt.map(|d| TreeNode {
+                        id: doc_id(d.id),
+                        parent_id: d.folder_id.map(|fid| fld_id(fid)),
+                        name: d.name,
+                        kind: TreeNodeKind::Document,
+                        content: Some(d.content),
+                        created_at: d.created_at,
+                        updated_at: d.updated_at,
+                    })
+                }),
+            _ => Ok(None),
+        }
+    }
+
+    fn list_children(&self, parent_id: &str) -> Result<Vec<TreeNode>, String> {
+        let (prefix, n) = parse_prefixed_id(parent_id)
+            .ok_or_else(|| format!("Invalid parent ID: {}", parent_id))?;
+
+        let mut results: Vec<TreeNode> = Vec::new();
+
+        match prefix {
+            'c' => {
+                let folders = self
+                    .get_folders_by_collection(n)
+                    .map_err(|e| e.to_string())?;
+                let root_folders: Vec<_> = folders.into_iter().filter(|f| f.parent_folder_id.is_none()).collect();
+                for f in root_folders {
+                    results.push(TreeNode {
+                        id: fld_id(f.id),
+                        parent_id: Some(col_id(n)),
+                        name: f.name,
+                        kind: TreeNodeKind::Folder,
+                        content: None,
+                        created_at: f.created_at,
+                        updated_at: f.updated_at,
+                    });
+                }
+                let docs = self
+                    .get_documents_by_collection(n)
+                    .map_err(|e| e.to_string())?;
+                for d in docs.into_iter().filter(|d| d.folder_id.is_none()) {
+                    results.push(TreeNode {
+                        id: doc_id(d.id),
+                        parent_id: Some(col_id(n)),
+                        name: d.name,
+                        kind: TreeNodeKind::Document,
+                        content: None,
+                        created_at: d.created_at,
+                        updated_at: d.updated_at,
+                    });
+                }
+            }
+            'f' => {
+                let child_folders = self
+                    .get_folders_by_parent(n)
+                    .map_err(|e| e.to_string())?;
+                for f in child_folders {
+                    results.push(TreeNode {
+                        id: fld_id(f.id),
+                        parent_id: Some(fld_id(n)),
+                        name: f.name,
+                        kind: TreeNodeKind::Folder,
+                        content: None,
+                        created_at: f.created_at,
+                        updated_at: f.updated_at,
+                    });
+                }
+                let docs = self
+                    .get_documents_by_folder(n)
+                    .map_err(|e| e.to_string())?;
+                for d in docs {
+                    results.push(TreeNode {
+                        id: doc_id(d.id),
+                        parent_id: Some(fld_id(n)),
+                        name: d.name,
+                        kind: TreeNodeKind::Document,
+                        content: None,
+                        created_at: d.created_at,
+                        updated_at: d.updated_at,
+                    });
+                }
+            }
+            'd' => {
+                // documents have no children
+            }
+            _ => return Err(format!("Unknown ID prefix: {}", parent_id)),
+        }
+
+        results.sort_by(|a, b| {
+            a.kind
+                .cmp(&b.kind)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        Ok(results)
+    }
+
+    fn create_folder(&self, parent_id: &str, name: &str) -> Result<TreeNode, String> {
+        let (prefix, n) = parse_prefixed_id(parent_id)
+            .ok_or_else(|| format!("Invalid parent ID: {}", parent_id))?;
+
+        let (collection_id, parent_folder_id) = match prefix {
+            'c' => (n, None),
+            'f' => {
+                let folder = self
+                    .get_folder(n)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Folder not found: {}", parent_id))?;
+                (folder.collection_id, Some(n))
+            }
+            _ => return Err(format!("Cannot create folder under a document: {}", parent_id)),
+        };
+
+        let f = self
+            .create_folder(collection_id, parent_folder_id, name.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(TreeNode {
+            id: fld_id(f.id),
+            parent_id: f.parent_folder_id.map(|pid| fld_id(pid)),
+            name: f.name,
+            kind: TreeNodeKind::Folder,
+            content: None,
+            created_at: f.created_at,
+            updated_at: f.updated_at,
+        })
+    }
+
+    fn create_document(
+        &self,
+        parent_id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<TreeNode, String> {
+        let (prefix, n) = parse_prefixed_id(parent_id)
+            .ok_or_else(|| format!("Invalid parent ID: {}", parent_id))?;
+
+        let (collection_id, folder_id) = match prefix {
+            'c' => (n, None),
+            'f' => {
+                let folder = self
+                    .get_folder(n)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Folder not found: {}", parent_id))?;
+                (folder.collection_id, Some(n))
+            }
+            _ => return Err(format!("Cannot create document under a document: {}", parent_id)),
+        };
+
+        let d = self
+            .create_document(collection_id, folder_id, name.to_string(), content.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(TreeNode {
+            id: doc_id(d.id),
+            parent_id: d.folder_id.map(|fid| fld_id(fid)),
+            name: d.name,
+            kind: TreeNodeKind::Document,
+            content: Some(d.content),
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+        })
+    }
+
+    fn update_document(
+        &self,
+        id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<TreeNode, String> {
+        let n = require_prefix(id, 'd')?;
+        let d = self
+            .update_document(n, name.to_string(), content.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(TreeNode {
+            id: doc_id(d.id),
+            parent_id: d.folder_id.map(|fid| fld_id(fid)),
+            name: d.name,
+            kind: TreeNodeKind::Document,
+            content: Some(d.content),
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+        })
+    }
+
+    fn rename_entry(&self, id: &str, new_name: &str) -> Result<TreeNode, String> {
+        let (prefix, n) = parse_prefixed_id(id)
+            .ok_or_else(|| format!("Invalid ID: {}", id))?;
+        match prefix {
+            'c' => {
+                let existing = self
+                    .get_collection(n)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Collection not found: {}", id))?;
+                let c = self
+                    .update_collection(n, new_name.to_string(), existing.description)
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: col_id(c.id),
+                    parent_id: None,
+                    name: c.name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at: c.created_at,
+                    updated_at: c.updated_at,
+                })
+            }
+            'f' => {
+                let f = self
+                    .update_folder(n, new_name.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: fld_id(f.id),
+                    parent_id: f.parent_folder_id.map(|pid| fld_id(pid)),
+                    name: f.name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at: f.created_at,
+                    updated_at: f.updated_at,
+                })
+            }
+            'd' => {
+                let existing = self
+                    .get_document(n)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Document not found: {}", id))?;
+                let d = self
+                    .update_document(n, new_name.to_string(), existing.content)
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: doc_id(d.id),
+                    parent_id: d.folder_id.map(|fid| fld_id(fid)),
+                    name: d.name,
+                    kind: TreeNodeKind::Document,
+                    content: Some(d.content),
+                    created_at: d.created_at,
+                    updated_at: d.updated_at,
+                })
+            }
+            _ => Err(format!("Unknown ID prefix: {}", id)),
+        }
+    }
+
+    fn delete_entry(&self, id: &str) -> Result<bool, String> {
+        let (prefix, n) = parse_prefixed_id(id)
+            .ok_or_else(|| format!("Invalid ID: {}", id))?;
+        match prefix {
+            'c' => self.delete_collection(n).map_err(|e| e.to_string()),
+            'f' => self.delete_folder(n).map_err(|e| e.to_string()),
+            'd' => self.delete_document(n).map_err(|e| e.to_string()),
+            _ => Err(format!("Unknown ID prefix: {}", id)),
+        }
+    }
+
+    fn move_entry(&self, id: &str, new_parent_id: &str) -> Result<TreeNode, String> {
+        let (src_prefix, src_n) = parse_prefixed_id(id)
+            .ok_or_else(|| format!("Invalid source ID: {}", id))?;
+        let (dst_prefix, dst_n) = parse_prefixed_id(new_parent_id)
+            .ok_or_else(|| format!("Invalid destination ID: {}", new_parent_id))?;
+
+        match (src_prefix, dst_prefix) {
+            ('d', 'f') => {
+                let d = self
+                    .move_document(src_n, Some(dst_n))
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: doc_id(d.id),
+                    parent_id: d.folder_id.map(|fid| fld_id(fid)),
+                    name: d.name,
+                    kind: TreeNodeKind::Document,
+                    content: None,
+                    created_at: d.created_at,
+                    updated_at: d.updated_at,
+                })
+            }
+            ('d', 'c') => {
+                let d = self
+                    .move_document(src_n, None)
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: doc_id(d.id),
+                    parent_id: Some(col_id(dst_n)),
+                    name: d.name,
+                    kind: TreeNodeKind::Document,
+                    content: None,
+                    created_at: d.created_at,
+                    updated_at: d.updated_at,
+                })
+            }
+            ('f', 'f') => {
+                let f = self
+                    .move_folder(src_n, Some(dst_n))
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: fld_id(f.id),
+                    parent_id: f.parent_folder_id.map(|pid| fld_id(pid)),
+                    name: f.name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at: f.created_at,
+                    updated_at: f.updated_at,
+                })
+            }
+            ('f', 'c') => {
+                let f = self
+                    .move_folder(src_n, None)
+                    .map_err(|e| e.to_string())?;
+                Ok(TreeNode {
+                    id: fld_id(f.id),
+                    parent_id: Some(col_id(dst_n)),
+                    name: f.name,
+                    kind: TreeNodeKind::Folder,
+                    content: None,
+                    created_at: f.created_at,
+                    updated_at: f.updated_at,
+                })
+            }
+            _ => Err(format!(
+                "Cannot move {} to {} ({}, {})",
+                id, new_parent_id, src_prefix, dst_prefix
+            )),
+        }
+    }
+
+    fn search(&self, query: &str) -> Result<Vec<TreeNode>, String> {
+        let results = self.search_documents(query).map_err(|e| e.to_string())?;
+        results
+            .into_iter()
+            .map(|r| {
+                Ok(TreeNode {
+                    id: doc_id(r.id),
+                    parent_id: None, // search results don't carry folder context
+                    name: r.name,
+                    kind: TreeNodeKind::Document,
+                    content: None,
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                })
+            })
+            .collect()
+    }
+
+    fn export_root_to_filesystem(&self, root_id: &str, target_path: &Path) -> Result<(), String> {
+        let n = require_prefix(root_id, 'c')?;
+        let collection = self
+            .get_collection(n)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Collection not found: {}", root_id))?;
+
+        let root_dir = target_path.join(&collection.name);
+        std::fs::create_dir_all(&root_dir)
+            .map_err(|e| format!("Failed to create directory {}: {}", root_dir.display(), e))?;
+
+        self.export_collection_contents(n, &root_dir)
+            .map_err(|e| e.to_string())
     }
 }

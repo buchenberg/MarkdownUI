@@ -36,6 +36,10 @@ function AppContent() {
         return saved ? saved === "true" : false;
     });
 
+    // Storage type
+    const [storageType, setStorageTypeState] = useState<"sqlite" | "filesystem">("sqlite");
+    const [storagePending, setStoragePending] = useState(false);
+
     // MCP server state
     const [mcpRunning, setMcpRunning] = useState(false);
     const [mcpPending, setMcpPending] = useState(false);
@@ -63,6 +67,8 @@ function AppContent() {
     useEffect(() => {
         // Check initial MCP server status on mount
         api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
+        // Load storage type
+        api.getStorageType().then(setStorageTypeState).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -291,6 +297,24 @@ function AppContent() {
         }
     };
 
+    // Storage type change
+    const handleStorageTypeChange = async (newType: "sqlite" | "filesystem") => {
+        if (newType === storageType) return;
+        setStoragePending(true);
+        try {
+            await api.setStorageType(newType);
+            setStorageTypeState(newType);
+            alert(
+                `Storage type changed to ${newType}. Please restart the application for the change to take effect.`,
+            );
+        } catch (error) {
+            console.error("Failed to change storage type:", error);
+            alert(`Failed to change storage type: ${error}`);
+        } finally {
+            setStoragePending(false);
+        }
+    };
+
     // Export handlers
     const handleExportMd = async () => {
         try {
@@ -468,6 +492,7 @@ function AppContent() {
                                 onHeadingClick={handleHeadingClick}
                                 mcpAnimatingIds={animatingIds}
                                 lastMcpEvents={lastEvents}
+                                storageType={storageType}
                             />
                         </div>
                         {/* Thin resize divider */}
@@ -520,6 +545,9 @@ function AppContent() {
                 mcpRunning={mcpRunning}
                 mcpPending={mcpPending}
                 onMcpToggle={handleMcpToggle}
+                storageType={storageType}
+                storagePending={storagePending}
+                onStorageTypeChange={handleStorageTypeChange}
             />
         </div>
     );

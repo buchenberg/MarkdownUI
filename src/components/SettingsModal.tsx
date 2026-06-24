@@ -10,9 +10,12 @@ interface SettingsModalProps {
     mcpRunning: boolean;
     mcpPending: boolean;
     onMcpToggle: () => Promise<void>;
+    storageType: 'sqlite' | 'filesystem';
+    storagePending: boolean;
+    onStorageTypeChange: (type: 'sqlite' | 'filesystem') => Promise<void>;
 }
 
-type CategoryId = 'general' | 'mcp-server';
+type CategoryId = 'general' | 'mcp-server' | 'storage';
 
 interface Category {
     id: CategoryId;
@@ -39,6 +42,17 @@ const CATEGORIES: Category[] = [
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+        ),
+    },
+    {
+        id: 'storage',
+        label: 'Storage',
+        icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
             </svg>
         ),
     },
@@ -84,6 +98,9 @@ export default function SettingsModal({
     mcpRunning,
     mcpPending,
     onMcpToggle,
+    storageType,
+    storagePending,
+    onStorageTypeChange,
 }: SettingsModalProps) {
     const [activeCategory, setActiveCategory] = useState<CategoryId>('general');
 
@@ -219,6 +236,53 @@ export default function SettingsModal({
                                                 {mcpPending ? 'Toggling...' : mcpRunning ? 'Stop' : 'Start'}
                                             </button>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeCategory === 'storage' && (
+                            <div>
+                                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                                    Storage
+                                </h2>
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                        Storage Type
+                                    </h3>
+                                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
+                                        <SettingsRow label="Backend" icon={
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                            </svg>
+                                        }>
+                                            <SegmentedToggle
+                                                options={[
+                                                    { value: 'sqlite', label: 'SQLite' },
+                                                    { value: 'filesystem', label: 'Filesystem' },
+                                                ]}
+                                                value={storageType}
+                                                onChange={async (newType: string) => {
+                                                    if (newType === storageType) return;
+                                                    const confirmed = confirm(
+                                                        `Switch storage to ${newType}?\n\nThis requires restarting the application. Unsaved changes will be lost.`,
+                                                    );
+                                                    if (confirmed) {
+                                                        await onStorageTypeChange(newType as 'sqlite' | 'filesystem');
+                                                    }
+                                                }}
+                                            />
+                                        </SettingsRow>
+                                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+                                            {storageType === 'sqlite'
+                                                ? 'Documents are stored in a SQLite database in the app data directory.'
+                                                : 'Documents are browsed and edited directly on the filesystem.'}
+                                        </p>
+                                        {storagePending && (
+                                            <p className="text-xs text-yellow-500 mt-1">Saving...</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

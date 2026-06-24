@@ -4,12 +4,19 @@
 mod database;
 mod converter;
 mod mcp_server;
+mod storage;
+mod filesystem;
+mod config;
 
 use database::Database;
 use converter::{ExportFormat, convert_markdown, check_chrome_available, convert_html_to_pdf};
 use mcp_server::DbArc;
-use std::sync::{Arc, Mutex};
+use storage::{StorageBackend, TreeNode};
+use filesystem::FilesystemStorage;
+use config::StorageConfig;
+use std::sync::{Arc, Mutex, RwLock};
 use std::fs;
+use std::path::PathBuf;
 use serde_json::{json, Value};
 use tauri::{State, Manager};
 use tauri::api::path::app_data_dir;
@@ -19,6 +26,151 @@ use tokio::task::JoinHandle;
 struct McpServerState(Mutex<Option<JoinHandle<()>>>);
 
 type DbState<'a> = State<'a, DbArc>;
+
+/// Holds the application configuration, accessible from both Tauri commands and MCP server.
+type ConfigState<'a> = State<'a, Arc<RwLock<StorageConfig>>>;
+
+// ── Storage type commands ─────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_storage_type(config: ConfigState) -> Result<String, String> {
+    let cfg = config.read().map_err(|e| e.to_string())?;
+    Ok(cfg.storage_type.clone())
+}
+
+#[tauri::command]
+fn set_storage_type(config: ConfigState, app_data_dir: State<'_, AppDataDir>, storage_type: String) -> Result<(), String> {
+    let mut cfg = config.write().map_err(|e| e.to_string())?;
+    if storage_type != "sqlite" && storage_type != "filesystem" {
+        return Err(format!("Invalid storage type: {}. Must be 'sqlite' or 'filesystem'.", storage_type));
+    }
+    cfg.set_storage_type(&storage_type);
+    cfg.save(&app_data_dir.0)?;
+    Ok(())
+}
+
+// Storage path is determined at startup and stored in state
+struct AppDataDir(pub PathBuf);
+
+/// The active storage backend, initialized based on config at startup.
+type BackendArc = Arc<dyn StorageBackend>;
+type BackendState<'a> = State<'a, BackendArc>;
+
+// ── Unified storage commands (trait-based) ────────────────────────────────────
+
+#[tauri::command]
+fn storage_list_roots(backend: BackendState) -> Result<Vec<TreeNode>, String> {
+    backend.list_roots()
+}
+
+#[tauri::command]
+fn storage_add_root(backend: BackendState, name: String, extra: Option<String>) -> Result<TreeNode, String> {
+    backend.add_root(&name, extra.as_deref())
+}
+
+#[tauri::command]
+fn storage_remove_root(backend: BackendState, id: String) -> Result<bool, String> {
+    backend.remove_root(&id)
+}
+
+#[tauri::command]
+fn storage_get_entry(backend: BackendState, id: String) -> Result<Option<TreeNode>, String> {
+    backend.get_entry(&id)
+}
+
+#[tauri::command]
+fn storage_list_children(backend: BackendState, parent_id: String) -> Result<Vec<TreeNode>, String> {
+    backend.list_children(&parent_id)
+}
+
+#[tauri::command]
+fn storage_create_folder(
+    backend: BackendState,
+    parent_id: String,
+    name: String,
+) -> Result<TreeNode, String> {
+    backend.create_folder(&parent_id, &name)
+}
+
+#[tauri::command]
+fn storage_create_document(
+    backend: BackendState,
+    parent_id: String,
+    name: String,
+    content: String,
+) -> Result<TreeNode, String> {
+    backend.create_document(&parent_id, &name, &content)
+}
+
+#[tauri::command]
+fn storage_update_document(
+    backend: BackendState,
+    id: String,
+    name: String,
+    content: String,
+) -> Result<TreeNode, String> {
+    backend.update_document(&id, &name, &content)
+}
+
+#[tauri::command]
+fn storage_rename_entry(backend: BackendState, id: String, new_name: String) -> Result<TreeNode, String> {
+    backend.rename_entry(&id, &new_name)
+}
+
+#[tauri::command]
+fn storage_delete_entry(backend: BackendState, id: String) -> Result<bool, String> {
+    backend.delete_entry(&id)
+}
+
+#[tauri::command]
+fn storage_move_entry(backend: BackendState, id: String, new_parent_id: String) -> Result<TreeNode, String> {
+    backend.move_entry(&id, &new_parent_id)
+}
+
+#[tauri::command]
+fn storage_search(backend: BackendState, query: String) -> Result<Vec<TreeNode>, String> {
+    backend.search(&query)
+}
+
+#[tauri::command]
+fn storage_export_root(
+    backend: BackendState,
+    root_id: String,
+    target_path: String,
+) -> Result<(), String> {
+    backend.export_root_to_filesystem(&root_id, &PathBuf::from(target_path))
+}
+
+#[tauri::command]
+fn storage_export_document(
+    backend: BackendState,
+    id: String,
+    format: String,
+    output_path: String,
+) -> Result<(), String> {
+    let entry = backend.get_entry(&id)?
+        .ok_or_else(|| format!("Entry not found: {}", id))?;
+    let content = entry.content.ok_or_else(|| "Entry is not a document".to_string())?;
+
+    let export_format = ExportFormat::from_str(&format)?;
+    match export_format {
+        ExportFormat::Html => {
+            let output_bytes = convert_markdown(&content, &export_format)?;
+            fs::write(&output_path, output_bytes)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+        }
+        ExportFormat::Pdf => {
+            let html_bytes = convert_markdown(&content, &ExportFormat::Html)?;
+            let html = String::from_utf8_lossy(&html_bytes).to_string();
+            // We need an async context for chromiumoxide; spawn a blocking task
+            let pdf_bytes = tokio::runtime::Handle::current()
+                .block_on(convert_html_to_pdf(&html))?;
+            fs::write(&output_path, pdf_bytes)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+        }
+    }
+    Ok(())
+}
 
 // Collections commands
 #[tauri::command]
@@ -273,18 +425,58 @@ fn main() {
             let app_data_dir = app_data_dir(&app.config())
                 .ok_or_else(|| "Failed to get app data directory")?;
             
-            // Initialize database
-            let database = Database::new(app_data_dir)
-                .map_err(|e| format!("Failed to initialize database: {}", e))?;
+            // Load or create storage config
+            let storage_config = StorageConfig::load(&app_data_dir);
+            let config_arc = Arc::new(RwLock::new(storage_config.clone()));
+            
+            // Build the active storage backend based on config
+            let backend: BackendArc = match storage_config.storage_type.as_str() {
+                "filesystem" => {
+                    Arc::new(FilesystemStorage::new(
+                        Arc::clone(&config_arc),
+                        app_data_dir.clone(),
+                    ))
+                }
+                _ => {
+                    // SQLite mode: use the shared database instance
+                    Arc::new(Database::new(app_data_dir.clone())
+                        .map_err(|e| format!("Failed to initialize database: {}", e))?)
+                }
+            };
 
-            // Manage DB behind both a plain Mutex (for Tauri commands) and an
-            // Arc<Mutex> (for the MCP server which needs to share across threads).
-            let db_arc: DbArc = Arc::new(Mutex::new(database));
-            app.manage(Arc::clone(&db_arc));  // DbArc for MCP
-            app.manage(McpServerState(Mutex::new(None)));
+            // We also keep a DbArc for the MCP server (which still uses Database directly).
+            // In SQLite mode this opens a second WAL connection to the same file, which is fine.
+            let db_arc: DbArc = Arc::new(Mutex::new(
+                Database::new(app_data_dir.clone())
+                    .map_err(|e| format!("Failed to initialize MCP database: {}", e))?,
+            ));
+
+            // Manage state
+            app.manage(backend);                               // StorageBackend (unified commands)
+            app.manage(config_arc);                            // StorageConfig
+            app.manage(AppDataDir(app_data_dir));               // Config directory path
+            app.manage(db_arc);                                // MCP server database
+            app.manage(McpServerState(Mutex::new(None)));     // MCP server handle
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_storage_type,
+            set_storage_type,
+            storage_list_roots,
+            storage_add_root,
+            storage_remove_root,
+            storage_get_entry,
+            storage_list_children,
+            storage_create_folder,
+            storage_create_document,
+            storage_update_document,
+            storage_rename_entry,
+            storage_delete_entry,
+            storage_move_entry,
+            storage_search,
+            storage_export_root,
+            storage_export_document,
             get_collections,
             get_collection,
             create_collection,
