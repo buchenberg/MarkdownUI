@@ -11,7 +11,9 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
   - GitHub Flavored Markdown (tables, task lists, strikethrough)
   - Embedded Mermaid diagrams with theme support (both ` ```mermaid ` and `:::mermaid` syntax)
   - Code blocks with syntax highlighting (Prism)
-- **Collections**: Organize documents into collections
+- **Collections & Folders**: Organize documents hierarchically
+- **Storage Backends**: Choose between internal SQLite Collections or editing your local Filesystem directly
+- **Settings Panel**: Configure auto-save, themes, and switch storage backends
 - **Auto-save**: Optional automatic saving of document content
 - **Export Options**:
   - Markdown (.md) - Raw markdown file
@@ -42,11 +44,12 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 ## Usage
 
 1. **Toggle Sidebar**: Click the hamburger menu (☰) to show/hide the sidebar
-2. **Create a Collection**: Click "New" in the Collections section
-3. **Create a Document**: Select a collection, then click "New" in Documents
-4. **Edit Markdown**: Write your markdown in the left editor panel
-5. **Preview**: See the rendered output in the right preview panel
-6. **Embed Mermaid Diagrams**: Use fenced code blocks with the `mermaid` language:
+2. **Settings**: Click the gear icon (⚙) to open settings. Here you can switch between SQLite Collections or Local Filesystem storage.
+3. **Create a Collection**: Click "New" in the Collections section
+4. **Create a Document**: Select a collection (or folder), then click "New" in Documents
+5. **Edit Markdown**: Write your markdown in the left editor panel
+6. **Preview**: See the rendered output in the right preview panel
+7. **Embed Mermaid Diagrams**: Use fenced code blocks with the `mermaid` language:
 
    ~~~markdown
    ```mermaid
@@ -68,9 +71,9 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 
    Both syntaxes are fully supported and can be mixed in the same document.
 
-7. **Export**: Click the Export button to save as Markdown, HTML, or PDF
-8. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
-9. **MCP Server**: Click the **MCP** button in the header to start the agent integration server (see [MCP Server](#mcp-server) below)
+8. **Export**: Click the Export button to save as Markdown, HTML, or PDF
+9. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
+10. **MCP Server**: Click the **MCP** button in the header to start the agent integration server (see [MCP Server](#mcp-server) below)
 
 ## MCP Server
 
@@ -290,6 +293,7 @@ You no longer need to run `npm run release:*` or manually bump versions — sema
 ## Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS
+- **State Management**: Zustand
 - **Editor**: Monaco Editor (with custom theme)
 - **Markdown**: react-markdown, remark-gfm, rehype-raw
 - **Syntax Highlighting**: react-syntax-highlighter (Prism)
@@ -310,6 +314,7 @@ MarkdownUI/
 ├── src/                    # Frontend (React/TypeScript)
 │   ├── App.tsx             # Main application component
 │   ├── api.ts              # Tauri IPC API layer
+│   ├── store/              # Zustand global state store
 │   └── components/         # React components
 ├── src-tauri/              # Backend (Rust/Tauri)
 │   └── src/
