@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import CollectionsBrowser from "./components/CollectionsBrowser";
 import FilesystemBrowser from "./components/FilesystemBrowser";
 import DocumentEditor from "./components/DocumentEditor";
@@ -9,6 +9,7 @@ import { SettingsProvider } from "./contexts/SettingsContext";
 import { useTheme } from "./ThemeContext";
 import { useSettings } from "./contexts/SettingsContext";
 import { useMcpEvents } from "./hooks/useMcpEvents";
+import { useAppStore } from "./store/useAppStore";
 import * as api from "./api";
 import type { Collection, Document, ExportFormat, TreeNode } from "./api";
 
@@ -16,41 +17,34 @@ import type { Collection, Document, ExportFormat, TreeNode } from "./api";
 export type { Collection, Document };
 
 function AppContent() {
-    const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
-    const [collections, setCollections] = useState<Collection[]>([]);
-    const [scrollToHeadingId, setScrollToHeadingId] = useState<string | null>(null);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [sidebarWidth, setSidebarWidth] = useState(320); // Initial width in pixels
-    const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
+    const {
+        selectedDocument, setSelectedDocument,
+        setCollections,
+        setDocumentsByCollection, setDocumentsByFolder,
+        scrollToHeadingId, setScrollToHeadingId,
+        sidebarCollapsed, setSidebarCollapsed,
+        sidebarWidth, setSidebarWidth,
+        isDraggingSidebar, setIsDraggingSidebar,
+        documentName, setDocumentName,
+        documentContent, setDocumentContent,
+        hasChanges, setHasChanges,
+        hasNameChanges, setHasNameChanges,
+        zoomLevel, setZoomLevel,
+        autoSaveEnabled, setAutoSaveEnabled,
+        storageType, setStorageType,
+        storagePending, setStoragePending,
+        workspaceRoots, setWorkspaceRoots,
+        selectedFsDoc, setSelectedFsDoc,
+        mcpRunning, setMcpRunning,
+        mcpPending, setMcpPending,
+        mcpFlash, setMcpFlash
+    } = useAppStore();
+
     const containerRef = useRef<HTMLDivElement>(null);
     const { theme, toggleTheme } = useTheme();
     const { settingsOpen, openSettings, closeSettings } = useSettings();
 
-    // Document editor state lifted to App level for unified header
-    const [documentName, setDocumentName] = useState("");
-    const [documentContent, setDocumentContent] = useState("");
-    const [hasChanges, setHasChanges] = useState(false);
-    const [hasNameChanges, setHasNameChanges] = useState(false);
-    const [zoomLevel, setZoomLevel] = useState(1.0);
-    const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
-        const saved = localStorage.getItem("markdown-ui-auto-save");
-        return saved ? saved === "true" : false;
-    });
-
-    // Storage type
-    const [storageType, setStorageTypeState] = useState<"sqlite" | "filesystem">("sqlite");
-    const [storagePending, setStoragePending] = useState(false);
-
-    // Workspace roots (filesystem mode)
-    const [workspaceRoots, setWorkspaceRoots] = useState<TreeNode[]>([]);
-    const [selectedFsDoc, setSelectedFsDoc] = useState<TreeNode | null>(null);
-
-    // MCP server state
-    const [mcpRunning, setMcpRunning] = useState(false);
-    const [mcpPending, setMcpPending] = useState(false);
-
     // MCP live update animations
-    const [mcpFlash, setMcpFlash] = useState(false);
     const { animatingIds, lastEvents } = useMcpEvents(mcpRunning);
 
     // When an MCP event touches the currently open document, refresh it
@@ -85,7 +79,7 @@ function AppContent() {
         api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
         // Load storage type
         api.getStorageType().then((t) => {
-            setStorageTypeState(t);
+            setStorageType(t);
             if (t === "filesystem") fetchWorkspaceRoots();
         }).catch(() => {});
     }, []);
@@ -152,11 +146,6 @@ function AppContent() {
         }
     };
 
-    const handleDocumentSelect = (document: Document) => {
-        setSelectedDocument(document);
-        setSelectedFsDoc(null);
-    };
-
     const handleFsDocumentSelect = (fsDoc: TreeNode) => {
         setSelectedFsDoc(fsDoc);
         setSelectedDocument(null);
@@ -164,22 +153,6 @@ function AppContent() {
         setDocumentContent(fsDoc.content || "");
         setHasChanges(false);
         setHasNameChanges(false);
-    };
-
-    const handleDocumentCreate = async (
-        collectionId: number,
-        folderId: number | null,
-        name: string,
-        content: string,
-    ) => {
-        try {
-            const newDocument = await api.createDocument(collectionId, folderId, name, content);
-            setSelectedDocument(newDocument);
-            return newDocument;
-        } catch (error) {
-            console.error("Failed to create document:", error);
-            throw error;
-        }
     };
 
     const handleDocumentUpdate = async (
@@ -190,6 +163,29 @@ function AppContent() {
         try {
             const updatedDocument = await api.updateDocument(documentId, name, content);
             setSelectedDocument(updatedDocument);
+            
+            // Update in collection cache
+            setDocumentsByCollection((prev: Map<number, Document[]>) => {
+                const next = new Map(prev);
+                const docs = next.get(updatedDocument.collection_id);
+                if (docs) {
+                    next.set(updatedDocument.collection_id, docs.map((d: Document) => d.id === documentId ? updatedDocument : d));
+                }
+                return next;
+            });
+
+            // Update in folder cache if it belongs to one
+            if (updatedDocument.folder_id) {
+                setDocumentsByFolder((prev: Map<number, Document[]>) => {
+                    const next = new Map(prev);
+                    const docs = next.get(updatedDocument.folder_id as number);
+                    if (docs) {
+                        next.set(updatedDocument.folder_id as number, docs.map((d: Document) => d.id === documentId ? updatedDocument : d));
+                    }
+                    return next;
+                });
+            }
+
             return updatedDocument;
         } catch (error) {
             console.error("Failed to update document:", error);
@@ -210,61 +206,6 @@ function AppContent() {
             console.error("Failed to update filesystem document:", error);
             throw error;
         }
-    };
-
-    const handleCollectionCreate = async (name: string, description?: string) => {
-        try {
-            const newCollection = await api.createCollection(name, description);
-            setCollections([...collections, newCollection]);
-            return newCollection;
-        } catch (error) {
-            console.error("Failed to create collection:", error);
-            throw error;
-        }
-    };
-
-    const handleCollectionDelete = async (collectionId: number) => {
-        try {
-            const success = await api.deleteCollection(collectionId);
-            if (success) {
-                const updatedCollections = collections.filter(
-                    (c) => c.id !== collectionId,
-                );
-                setCollections(updatedCollections);
-                if (selectedDocument?.collection_id === collectionId) {
-                    setSelectedDocument(null);
-                }
-            } else {
-                alert("Failed to delete collection");
-            }
-        } catch (error) {
-            console.error("Failed to delete collection:", error);
-            alert("Failed to delete collection");
-        }
-    };
-
-    const handleDocumentDelete = async (documentId: number) => {
-        try {
-            const success = await api.deleteDocument(documentId);
-            if (success) {
-                if (selectedDocument?.id === documentId) {
-                    setSelectedDocument(null);
-                }
-            } else {
-                alert("Failed to delete document");
-            }
-        } catch (error) {
-            console.error("Failed to delete document:", error);
-            alert("Failed to delete document");
-        }
-    };
-
-    const handleFolderCreate = async (collectionId: number, parentFolderId: number | null, name: string) => {
-        return await api.createFolder(collectionId, parentFolderId, name);
-    };
-
-    const handleFolderDelete = async (folderId: number) => {
-        await api.deleteFolder(folderId);
     };
 
     // Header control handlers
@@ -305,10 +246,7 @@ function AppContent() {
         localStorage.setItem("markdown-ui-auto-save", enabled.toString());
     };
 
-    const handleHeadingClick = (document: Document, headingId: string) => {
-        setSelectedDocument(document);
-        setScrollToHeadingId(headingId);
-    };
+    // Removed handleHeadingClick
 
     const handleFsHeadingClick = async (docId: string, headingId: string) => {
         try {
@@ -361,8 +299,8 @@ function AppContent() {
     }, [documentContent, hasChanges, autoSaveEnabled, selectedDocument?.id, selectedFsDoc?.id, storageType]);
 
     // Zoom handlers
-    const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.1, 3.0));
-    const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.3));
+    const handleZoomIn = () => setZoomLevel(Math.min(zoomLevel + 0.1, 3.0));
+    const handleZoomOut = () => setZoomLevel(Math.max(zoomLevel - 0.1, 0.3));
     const handleResetZoom = () => setZoomLevel(1.0);
 
     // MCP server toggle
@@ -390,7 +328,7 @@ function AppContent() {
         setStoragePending(true);
         try {
             await api.setStorageType(newType);
-            setStorageTypeState(newType);
+            setStorageType(newType);
             alert(
                 `Storage type changed to ${newType}. Please restart the application for the change to take effect.`,
             );
@@ -601,19 +539,8 @@ function AppContent() {
                                 />
                             ) : (
                                 <CollectionsBrowser
-                                    collections={collections}
-                                    selectedDocument={selectedDocument}
-                                    onDocumentSelect={handleDocumentSelect}
-                                    onDocumentCreate={handleDocumentCreate}
-                                    onDocumentDelete={handleDocumentDelete}
-                                    onCollectionCreate={handleCollectionCreate}
-                                    onCollectionDelete={handleCollectionDelete}
-                                    onFolderCreate={handleFolderCreate}
-                                    onFolderDelete={handleFolderDelete}
-                                    onHeadingClick={handleHeadingClick}
                                     mcpAnimatingIds={animatingIds}
                                     lastMcpEvents={lastEvents}
-                                    storageType={storageType}
                                 />
                             )}
                         </div>

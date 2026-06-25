@@ -1,67 +1,57 @@
-import { useState, useEffect } from "react";
-import type { Folder, Document } from "../api";
+import { useState } from "react";
+import type { Folder } from "../api";
 import * as api from "../api";
 import DocumentRow from "./DocumentRow";
+import { useAppStore } from "../store/useAppStore";
 
 interface FolderNodeProps {
     folder: Folder;
-    allFolders: Folder[];
     depth: number;
-    selectedDocument: Document | null;
-    onDocumentSelect: (doc: Document) => void;
-    onHeadingClick: (doc: Document, headingId: string) => void;
-    onDocumentDelete: (id: number) => Promise<void>;
-    onFolderDelete: (id: number) => Promise<void>;
-    onFolderCreate: (collectionId: number, parentFolderId: number | null, name: string) => Promise<Folder>;
-    onDocumentCreate: (collectionId: number, folderId: number | null) => Promise<void>;
     onRefresh: () => void;
     mcpAnimatingIds?: Set<number>;
 }
 
 export default function FolderNode({
     folder,
-    allFolders,
     depth,
-    selectedDocument,
-    onDocumentSelect,
-    onHeadingClick,
-    onDocumentDelete,
-    onFolderDelete,
-    onFolderCreate,
-    onDocumentCreate,
     onRefresh,
     mcpAnimatingIds,
 }: FolderNodeProps) {
+    const {
+        foldersByCollection,
+        documentsByFolder, setDocumentsByFolder,
+        selectedDocument, setSelectedDocument,
+        setDocumentName, setDocumentContent, setHasChanges, setHasNameChanges,
+        setScrollToHeadingId
+    } = useAppStore();
+
     const [expanded, setExpanded] = useState(false);
-    const [documents, setDocuments] = useState<Document[]>([]);
     const [loading, setLoading] = useState(false);
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteDocId, setDeleteDocId] = useState<number | null>(null);
 
+    const allFolders = foldersByCollection.get(folder.collection_id) || [];
     const childFolders = allFolders.filter((f) => f.parent_folder_id === folder.id);
+    const documents = documentsByFolder.get(folder.id) || [];
 
     const loadChildren = async () => {
         if (loading) return;
         setLoading(true);
         try {
             const docs = await api.getDocumentsByFolder(folder.id);
-            setDocuments(docs);
+            setDocumentsByFolder(prev => {
+                const next = new Map(prev);
+                next.set(folder.id, docs);
+                return next;
+            });
         } catch (e) {
             console.error("Failed to fetch folder documents", e);
         } finally {
             setLoading(false);
         }
     };
-
-    // Sync selected document into local state (e.g. after rename + save)
-    useEffect(() => {
-        if (!selectedDocument || selectedDocument.folder_id !== folder.id) return;
-        setDocuments((prev) =>
-            prev.map((d) => (d.id === selectedDocument.id ? selectedDocument : d)),
-        );
-    }, [selectedDocument, folder.id]);
 
     const toggle = async () => {
         if (!expanded && documents.length === 0 && childFolders.length === 0) {
@@ -73,7 +63,7 @@ export default function FolderNode({
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
         try {
-            await onFolderCreate(folder.collection_id, folder.id, newFolderName.trim());
+            await api.createFolder(folder.collection_id, folder.id, newFolderName.trim());
             setNewFolderName("");
             setShowNewFolderInput(false);
             onRefresh();
@@ -85,7 +75,7 @@ export default function FolderNode({
     const handleDeleteFolder = async () => {
         setShowDeleteConfirm(false);
         try {
-            await onFolderDelete(folder.id);
+            await api.deleteFolder(folder.id);
             onRefresh();
         } catch {
             alert("Failed to delete folder");
@@ -95,11 +85,35 @@ export default function FolderNode({
     const handleDeleteDocument = async () => {
         if (deleteDocId === null) return;
         try {
-            await onDocumentDelete(deleteDocId);
-            setDocuments((prev) => prev.filter((d) => d.id !== deleteDocId));
+            await api.deleteDocument(deleteDocId);
+            setDocumentsByFolder((prev) => {
+                const next = new Map(prev);
+                const currentDocs = next.get(folder.id) || [];
+                next.set(folder.id, currentDocs.filter((d) => d.id !== deleteDocId));
+                return next;
+            });
+            if (selectedDocument?.id === deleteDocId) {
+                setSelectedDocument(null);
+            }
             setDeleteDocId(null);
         } catch {
             alert("Failed to delete document");
+        }
+    };
+    
+    const handleDocumentCreate = async () => {
+        const name = `New Document ${documents.length + 1}`;
+        const content = `# New Document\n\nWrite your markdown content here.\n`;
+        try {
+            const newDocument = await api.createDocument(folder.collection_id, folder.id, name, content);
+            await loadChildren();
+            setSelectedDocument(newDocument);
+            setDocumentName(newDocument.name);
+            setDocumentContent(newDocument.content);
+            setHasChanges(false);
+            setHasNameChanges(false);
+        } catch {
+            alert("Failed to create document");
         }
     };
 
@@ -162,7 +176,7 @@ export default function FolderNode({
                         <button
                             title="New Document"
                             onClick={async () => {
-                                await onDocumentCreate(folder.collection_id, folder.id);
+                                await handleDocumentCreate();
                                 await loadChildren();
                             }}
                             className="p-0.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
@@ -276,15 +290,7 @@ export default function FolderNode({
                         <FolderNode
                             key={childFolder.id}
                             folder={childFolder}
-                            allFolders={allFolders}
                             depth={depth + 1}
-                            selectedDocument={selectedDocument}
-                            onDocumentSelect={onDocumentSelect}
-                            onHeadingClick={onHeadingClick}
-                            onDocumentDelete={onDocumentDelete}
-                            onFolderDelete={onFolderDelete}
-                            onFolderCreate={onFolderCreate}
-                            onDocumentCreate={onDocumentCreate}
                             onRefresh={onRefresh}
                             mcpAnimatingIds={mcpAnimatingIds}
                         />
@@ -298,8 +304,23 @@ export default function FolderNode({
                             selectedDocument={selectedDocument}
                             indentBase={44 + depth * 16}
                             isDeleteConfirming={deleteDocId === doc.id}
-                            onSelect={() => onDocumentSelect(doc)}
-                            onHeadingClick={onHeadingClick}
+                            onSelect={() => {
+                                setSelectedDocument(doc);
+                                setDocumentName(doc.name);
+                                setDocumentContent(doc.content);
+                                setHasChanges(false);
+                                setHasNameChanges(false);
+                            }}
+                            onHeadingClick={(d, headingId) => {
+                                if (selectedDocument?.id !== d.id) {
+                                    setSelectedDocument(d);
+                                    setDocumentName(d.name);
+                                    setDocumentContent(d.content);
+                                    setHasChanges(false);
+                                    setHasNameChanges(false);
+                                }
+                                setScrollToHeadingId(headingId);
+                            }}
                             onRequestDelete={() => setDeleteDocId(doc.id)}
                             onCancelDelete={() => setDeleteDocId(null)}
                             onConfirmDelete={handleDeleteDocument}

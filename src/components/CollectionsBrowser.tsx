@@ -1,49 +1,30 @@
 import { useState, useEffect, useRef } from "react";
-import type { Collection, Document, Folder } from "../api";
+
 import * as api from "../api";
 import FolderNode from "./FolderNode";
 import DocumentRow from "./DocumentRow";
 import type { McpEventDetail } from "../hooks/useMcpEvents";
 
+import { useAppStore } from "../store/useAppStore";
+
 interface CollectionsBrowserProps {
-    collections: Collection[];
-    selectedDocument: Document | null;
-    onDocumentSelect: (document: Document) => void;
-    onDocumentCreate?: (
-        collectionId: number,
-        folderId: number | null,
-        name: string,
-        content: string,
-    ) => Promise<Document>;
-    onDocumentDelete: (documentId: number) => Promise<void>;
-    onCollectionCreate: (name: string, description?: string) => Promise<Collection>;
-    onCollectionDelete: (collectionId: number) => Promise<void>;
-    onFolderCreate?: (collectionId: number, parentFolderId: number | null, name: string) => Promise<Folder>;
-    onFolderDelete?: (folderId: number) => Promise<void>;
-    onHeadingClick: (document: Document, headingId: string) => void;
     mcpAnimatingIds?: Set<number>;
     lastMcpEvents?: McpEventDetail[];
-    storageType?: "sqlite" | "filesystem";
 }
 
 export default function CollectionsBrowser({
-    collections,
-    selectedDocument,
-    onDocumentSelect,
-    onDocumentCreate,
-    onDocumentDelete,
-    onCollectionCreate,
-    onCollectionDelete,
-    onFolderCreate,
-    onFolderDelete,
-    onHeadingClick,
     mcpAnimatingIds,
     lastMcpEvents,
-    storageType,
 }: CollectionsBrowserProps) {
+    const {
+        collections, setCollections,
+        documentsByCollection, setDocumentsByCollection,
+        foldersByCollection, setFoldersByCollection,
+        selectedDocument, setSelectedDocument,
+        setDocumentName, setDocumentContent, setHasChanges, setHasNameChanges,
+        storageType, setScrollToHeadingId
+    } = useAppStore();
     const [expandedCollections, setExpandedCollections] = useState<Set<number>>(new Set());
-    const [documentsByCollection, setDocumentsByCollection] = useState<Map<number, Document[]>>(new Map());
-    const [foldersByCollection, setFoldersByCollection] = useState<Map<number, Folder[]>>(new Map());
     const [loadingCollections, setLoadingCollections] = useState<Set<number>>(new Set());
     const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
     const [newCollectionName, setNewCollectionName] = useState("");
@@ -125,21 +106,7 @@ export default function CollectionsBrowser({
 
     // ── Sync document updates (e.g. after save) ──────────────────────────────
 
-    useEffect(() => {
-        if (!selectedDocument) return;
-        setDocumentsByCollection((prev) => {
-            const collectionDocs = prev.get(selectedDocument.collection_id);
-            if (!collectionDocs) return prev;
-            const next = new Map(prev);
-            next.set(
-                selectedDocument.collection_id,
-                collectionDocs.map((d) =>
-                    d.id === selectedDocument.id ? selectedDocument : d,
-                ),
-            );
-            return next;
-        });
-    }, [selectedDocument]);
+    // Replaced by useAppStore handling + App.tsx global effect
 
     // ── MCP event re-fetch: refresh affected collections ────────────────────
 
@@ -170,10 +137,11 @@ export default function CollectionsBrowser({
     const handleCreateCollection = async () => {
         if (!newCollectionName.trim()) return;
         try {
-            const newCollection = await onCollectionCreate(
+            const newCollection = await api.createCollection(
                 newCollectionName,
                 newCollectionDesc || undefined,
             );
+            setCollections([...collections, newCollection]);
             setShowNewCollectionInput(false);
             setNewCollectionName("");
             setNewCollectionDesc("");
@@ -191,7 +159,13 @@ export default function CollectionsBrowser({
     const handleDeleteCollection = async () => {
         if (deleteCollectionId === null) return;
         try {
-            await onCollectionDelete(deleteCollectionId);
+            const success = await api.deleteCollection(deleteCollectionId);
+            if (success) {
+                setCollections(collections.filter((c) => c.id !== deleteCollectionId));
+                if (selectedDocument?.collection_id === deleteCollectionId) {
+                    setSelectedDocument(null);
+                }
+            }
             setExpandedCollections((prev) => {
                 const next = new Set(prev);
                 next.delete(deleteCollectionId);
@@ -211,14 +185,13 @@ export default function CollectionsBrowser({
     // ── Document CRUD ────────────────────────────────────────────────────────
 
     const handleCreateDocument = async (collectionId: number, folderId: number | null = null) => {
-        if (!onDocumentCreate) return;
         const existingDocs = documentsByCollection.get(collectionId) ?? [];
         const name = `New Document ${existingDocs.length + 1}`;
         const content = `# New Document\n\nWrite your markdown content here.\n`;
         try {
-            const newDocument = await onDocumentCreate(collectionId, folderId, name, content);
+            const newDocument = await api.createDocument(collectionId, folderId, name, content);
             await fetchDocumentsForCollection(collectionId);
-            onDocumentSelect(newDocument);
+            setSelectedDocument(newDocument);
         } catch {
             alert("Failed to create document");
         }
@@ -234,9 +207,12 @@ export default function CollectionsBrowser({
             }
         }
         try {
-            await onDocumentDelete(deleteDocumentId);
+            await api.deleteDocument(deleteDocumentId);
             if (ownerCollectionId !== null) {
                 await fetchDocumentsForCollection(ownerCollectionId);
+            }
+            if (selectedDocument?.id === deleteDocumentId) {
+                setSelectedDocument(null);
             }
             setDeleteDocumentId(null);
         } catch {
@@ -247,9 +223,9 @@ export default function CollectionsBrowser({
     // ── Root folder creation ────────────────────────────────────────────────
 
     const handleCreateRootFolder = async (collectionId: number) => {
-        if (!newRootFolderName.trim() || !onFolderCreate) return;
+        if (!newRootFolderName.trim()) return;
         try {
-            await onFolderCreate(collectionId, null, newRootFolderName.trim());
+            await api.createFolder(collectionId, null, newRootFolderName.trim());
             setNewRootFolderName("");
             setNewRootFolderCollectionId(null);
             await fetchFoldersForCollection(collectionId);
@@ -282,7 +258,7 @@ export default function CollectionsBrowser({
             const name = file.name.replace(/\.md$/i, "");
             const newDocument = await api.createDocument(collectionId, null, name, content);
             await fetchDocumentsForCollection(collectionId);
-            onDocumentSelect(newDocument);
+            setSelectedDocument(newDocument);
         } catch {
             alert("Failed to upload file");
         } finally {
@@ -428,7 +404,6 @@ export default function CollectionsBrowser({
                                         className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0"
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                        {onFolderCreate && (
                                             <button
                                                 title="New Folder"
                                                 onClick={() => {
@@ -443,8 +418,6 @@ export default function CollectionsBrowser({
                                                     <line x1="9" y1="14" x2="15" y2="14" />
                                                 </svg>
                                             </button>
-                                        )}
-                                        {onDocumentCreate && (
                                             <button
                                                 title="New Document"
                                                 onClick={() => handleCreateDocument(collection.id)}
@@ -458,7 +431,6 @@ export default function CollectionsBrowser({
                                                     <line x1="9" y1="15" x2="15" y2="15" />
                                                 </svg>
                                             </button>
-                                        )}
                                         <button
                                             title={isUploading ? "Uploading…" : "Upload Markdown"}
                                             onClick={() => !isUploading && triggerUpload(collection.id)}
@@ -553,20 +525,7 @@ export default function CollectionsBrowser({
                                 <FolderNode
                                     key={folder.id}
                                     folder={folder}
-                                    allFolders={folders}
                                     depth={0}
-                                    selectedDocument={selectedDocument}
-                                    onDocumentSelect={onDocumentSelect}
-                                    onHeadingClick={onHeadingClick}
-                                    onDocumentDelete={onDocumentDelete}
-                                    onFolderDelete={async (id) => {
-                                        if (onFolderDelete) await onFolderDelete(id);
-                                    }}
-                                    onFolderCreate={async (collectionId, parentFolderId, name) => {
-                                        if (onFolderCreate) return await onFolderCreate(collectionId, parentFolderId, name);
-                                        throw new Error("onFolderCreate not provided");
-                                    }}
-                                    onDocumentCreate={handleCreateDocument}
                                     onRefresh={() => {
                                         fetchDocumentsForCollection(collection.id);
                                         fetchFoldersForCollection(collection.id);
@@ -591,8 +550,23 @@ export default function CollectionsBrowser({
                                             selectedDocument={selectedDocument}
                                             indentBase={28}
                                             isDeleteConfirming={deleteDocumentId === doc.id}
-                                            onSelect={() => onDocumentSelect(doc)}
-                                            onHeadingClick={onHeadingClick}
+                                            onSelect={() => {
+                                                setSelectedDocument(doc);
+                                                setDocumentName(doc.name);
+                                                setDocumentContent(doc.content);
+                                                setHasChanges(false);
+                                                setHasNameChanges(false);
+                                            }}
+                                            onHeadingClick={(d, headingId) => {
+                                                if (selectedDocument?.id !== d.id) {
+                                                    setSelectedDocument(d);
+                                                    setDocumentName(d.name);
+                                                    setDocumentContent(d.content);
+                                                    setHasChanges(false);
+                                                    setHasNameChanges(false);
+                                                }
+                                                setScrollToHeadingId(headingId);
+                                            }}
                                             onRequestDelete={() => setDeleteDocumentId(doc.id)}
                                             onCancelDelete={() => setDeleteDocumentId(null)}
                                             onConfirmDelete={handleDeleteDocument}
