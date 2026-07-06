@@ -3,24 +3,23 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export interface McpEventPayload {
     operation: string;
-    id: number;
-    collection_id: number | null;
+    /** Path id of the entry that changed (string, absolute path). */
+    id: string;
     name: string;
 }
 
 export interface McpEventDetail {
-    id: number;
+    id: string;
     operation: string;
-    collectionId: number | null;
     name: string;
 }
 
 const ANIMATION_DURATION_MS = 3000;
 
 export function useMcpEvents(enabled: boolean) {
-    const [animatingIds, setAnimatingIds] = useState<Set<number>>(new Set());
+    const [animatingIds, setAnimatingIds] = useState<Set<string>>(new Set());
     const [lastEvents, setLastEvents] = useState<McpEventDetail[]>([]);
-    const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+    const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
     const eventsWindowRef = useRef<McpEventDetail[]>([]);
 
     // Clear old events from the window (keep last 3 seconds)
@@ -39,15 +38,12 @@ export function useMcpEvents(enabled: boolean) {
 
         const setup = async () => {
             unlisten = await listen<McpEventPayload>("mcp-operation", (event) => {
-                const { id, collection_id, operation, name } = event.payload;
+                const { id, operation, name } = event.payload;
 
                 // Add to animating set
                 setAnimatingIds((prev) => {
                     const next = new Set(prev);
                     next.add(id);
-                    if (collection_id != null) {
-                        next.add(collection_id);
-                    }
                     return next;
                 });
 
@@ -55,7 +51,6 @@ export function useMcpEvents(enabled: boolean) {
                 const detail: McpEventDetail & { _ts: number } = {
                     id,
                     operation,
-                    collectionId: collection_id,
                     name,
                     _ts: Date.now(),
                 };
@@ -71,9 +66,6 @@ export function useMcpEvents(enabled: boolean) {
                     setAnimatingIds((prev) => {
                         const next = new Set(prev);
                         next.delete(id);
-                        if (collection_id != null) {
-                            next.delete(collection_id);
-                        }
                         return next;
                     });
                     timersRef.current.delete(id);

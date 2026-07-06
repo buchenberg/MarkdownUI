@@ -9,20 +9,13 @@ pub struct WorkspaceEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
-    #[serde(default = "default_storage_type")]
-    pub storage_type: String,
     #[serde(default)]
     pub workspaces: Vec<WorkspaceEntry>,
-}
-
-fn default_storage_type() -> String {
-    "sqlite".to_string()
 }
 
 impl Default for StorageConfig {
     fn default() -> Self {
         StorageConfig {
-            storage_type: "sqlite".to_string(),
             workspaces: Vec::new(),
         }
     }
@@ -45,10 +38,6 @@ impl StorageConfig {
             .map_err(|e| format!("Failed to write config: {}", e))
     }
 
-    pub fn set_storage_type(&mut self, storage_type: &str) {
-        self.storage_type = storage_type.to_string();
-    }
-
     pub fn add_workspace(&mut self, name: &str, path: PathBuf) {
         self.workspaces.push(WorkspaceEntry {
             name: name.to_string(),
@@ -56,12 +45,11 @@ impl StorageConfig {
         });
     }
 
-    pub fn remove_workspace(&mut self, index: usize) -> bool {
-        if index < self.workspaces.len() {
-            self.workspaces.remove(index);
-            true
-        } else {
-            false
-        }
+    /// Remove a workspace root whose path matches the given path.
+    /// Returns true if a workspace was removed.
+    pub fn remove_workspace_by_path(&mut self, path: &Path) -> bool {
+        let before = self.workspaces.len();
+        self.workspaces.retain(|w| !w.path.as_path().eq(path));
+        self.workspaces.len() != before
     }
 }

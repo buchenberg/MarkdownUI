@@ -11,13 +11,16 @@ A Markdown document viewer and editor with embedded Mermaid diagram support, bui
   - GitHub Flavored Markdown (tables, task lists, strikethrough)
   - Embedded Mermaid diagrams with theme support (both ` ```mermaid ` and `:::mermaid` syntax)
   - Code blocks with syntax highlighting (Prism)
-- **Collections**: Organize documents into collections
+- **Filesystem-Backed**: Browse, edit, and organize real `.md` files and folders on disk
+  - Add/remove root folders in Settings
+  - Create, rename (double-click), delete, and drag-to-move files and folders
+  - Per-document expandable table of contents
 - **Auto-save**: Optional automatic saving of document content
 - **Export Options**:
   - Markdown (.md) - Raw markdown file
   - HTML - Styled document with embedded diagrams
   - PDF - Print-ready document (requires Chrome/Chromium)
-- **MCP Server**: Embedded [Model Context Protocol](https://modelcontextprotocol.io/) server — expose your documents and collections to any AI agent over HTTP
+- **MCP Server**: Embedded [Model Context Protocol](https://modelcontextprotocol.io/) server — expose your files and folders to any AI agent over HTTP
 - **Zoom Controls**: Adjust preview zoom level (30% - 300%)
 - **Dark Mode**: Full dark/light theme support across all UI elements
 - **Unified Header**: Clean single-header layout with all controls
@@ -42,11 +45,13 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 ## Usage
 
 1. **Toggle Sidebar**: Click the hamburger menu (☰) to show/hide the sidebar
-2. **Create a Collection**: Click "New" in the Collections section
-3. **Create a Document**: Select a collection, then click "New" in Documents
-4. **Edit Markdown**: Write your markdown in the left editor panel
-5. **Preview**: See the rendered output in the right preview panel
-6. **Embed Mermaid Diagrams**: Use fenced code blocks with the `mermaid` language:
+2. **Add a Root Folder**: Open Settings → Storage and click "+ Add Root Folder" to browse a directory
+3. **Create a Document/Folder**: Hover a folder row and click the New Document / New Folder action; type the name and press Enter
+4. **Rename**: Double-click any file or folder row, edit the name, then press Enter (Esc to cancel)
+5. **Move**: Drag a file or folder onto another folder to move it
+6. **Edit Markdown**: Write your markdown in the left editor panel
+7. **Preview**: See the rendered output in the right preview panel
+8. **Embed Mermaid Diagrams**: Use fenced code blocks with the `mermaid` language:
 
    ~~~markdown
    ```mermaid
@@ -68,13 +73,13 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 
    Both syntaxes are fully supported and can be mixed in the same document.
 
-7. **Export**: Click the Export button to save as Markdown, HTML, or PDF
-8. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
-9. **MCP Server**: Click the **MCP** button in the header to start the agent integration server (see [MCP Server](#mcp-server) below)
+9. **Export**: Click the Export button to save as Markdown, HTML, or PDF
+10. **Toggle Theme**: Click the sun/moon icon to switch between light and dark modes
+11. **MCP Server**: Click the **MCP** button in the header to start the agent integration server (see [MCP Server](#mcp-server) below)
 
 ## MCP Server
 
-MarkdownUI includes an embedded [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that lets AI agents read and write your collections and documents directly. No external process or Node.js runtime required — the server runs inside the app.
+MarkdownUI includes an embedded [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that lets AI agents read and write the files and folders you have added as workspace roots directly. No external process or Node.js runtime required — the server runs inside the app.
 
 ### Starting the Server
 
@@ -88,29 +93,21 @@ Click the **MCP** button in the top-right header:
 
 ### Available Tools
 
-Once running, agents have access to 19 tools:
+Once running, agents have access to 11 path/file-centric tools:
 
 | Tool | Description |
 |------|-------------|
-| `list_collections` | List all collections |
-| `get_collection` | Get a collection by ID |
-| `create_collection` | Create a new collection |
-| `update_collection` | Rename / update a collection |
-| `delete_collection` | Delete a collection and all its documents |
-| `list_documents` | List documents in a collection (metadata only) |
-| `get_document` | Get a document with full markdown content |
-| `create_document` | Create a new document in a collection |
-| `update_document` | Update a document's name and/or content |
-| `delete_document` | Delete a document |
-| `search_documents` | Search documents by name or content across all collections |
-| `create_folder` | Create a folder in a collection |
-| `list_folders` | List all folders in a collection |
-| `get_folder` | Get a folder by ID |
-| `update_folder` | Rename a folder |
-| `delete_folder` | Delete a folder and its contents |
-| `move_folder` | Move a folder to a different parent |
-| `move_document` | Move a document to a different folder |
-| `list_folder_contents` | List child folders and documents in a folder |
+| `list_roots` | List all registered root folders |
+| `list_directory` | List the children (folders and `.md` documents) of a directory |
+| `get_entry` | Get a file (with content) or folder metadata by absolute path |
+| `read_file` | Read the markdown content of a `.md` file |
+| `create_file` | Create a new `.md` document (extension appended automatically) |
+| `update_file` | Update a document's content (and rename it if `name` changed) |
+| `create_directory` | Create a new subdirectory inside a parent directory |
+| `rename_entry` | Rename a file or folder (kept in place) |
+| `delete_entry` | Delete a file or folder (recursive for folders) |
+| `move_entry` | Move a file or folder into a new parent directory (same volume only) |
+| `search` | Search documents by filename or content across all root folders |
 
 ### Agent Configuration
 
@@ -295,7 +292,7 @@ You no longer need to run `npm run release:*` or manually bump versions — sema
 - **Syntax Highlighting**: react-syntax-highlighter (Prism)
 - **Diagrams**: Mermaid.js
 - **Backend**: Tauri 1.5, Rust
-- **Database**: SQLite (rusqlite)
+- **Storage**: Filesystem (real `.md` files on disk)
 - **MCP Server**: axum 0.7, tower-http 0.5 (HTTP transport, JSON-RPC 2.0)
 - **PDF Export**: chromiumoxide (headless Chrome)
 
@@ -314,8 +311,9 @@ MarkdownUI/
 ├── src-tauri/              # Backend (Rust/Tauri)
 │   └── src/
 │       ├── main.rs         # Tauri commands and app setup
-│       ├── database.rs     # SQLite operations
 │       ├── converter.rs    # Export conversion
+│       ├── filesystem.rs   # Filesystem-backed storage
+│       ├── storage.rs      # Shared TreeNode types
 │       └── mcp_server.rs   # Embedded axum MCP HTTP server
 └── docs/                   # Documentation
     └── ARCHITECTURE.md     # Detailed architecture guide

@@ -1,20 +1,19 @@
 //! Embedded MCP (Model Context Protocol) HTTP server for MarkdownUI.
 //!
-//! Exposes all collections and documents over a JSON-RPC 2.0 endpoint at
+//! Exposes the filesystem-backed document store over a JSON-RPC 2.0 endpoint at
 //! `http://localhost:3333/mcp` using the Streamable HTTP transport defined by
-//! the MCP spec.  The server shares the same `Arc<Mutex<Database>>` that the
-//! Tauri commands already use, so there is no second DB connection.
+//! the MCP spec. The server shares the same `Arc<FilesystemStorage>` that the
+//! Tauri commands use.
 //!
-//! Tools exposed (matching the Node.js mcp-server reference):
-//!   list_collections, get_collection, list_documents, get_document,
-//!   create_document, update_document, delete_document,
-//!   create_collection, update_collection, delete_collection,
-//!   search_documents
+//! Tools exposed (path/file-centric):
+//!   list_roots, list_directory, get_entry, read_file,
+//!   create_file, update_file, create_directory,
+//!   rename_entry, delete_entry, move_entry, search
 //!
 //! After each write operation, a Tauri event (`mcp-operation`) is emitted
 //! so the frontend can animate the changes in real time.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::{
     extract::State,
@@ -28,15 +27,13 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::database::Database;
+use crate::filesystem::FilesystemStorage;
 
 // ── Shared state ─────────────────────────────────────────────────────────────
 
-pub type DbArc = Arc<Mutex<Database>>;
-
 /// State shared between the MCP HTTP server and the Tauri event system.
 pub struct McpState {
-    pub db: DbArc,
+    pub fs: Arc<FilesystemStorage>,
     pub app_handle: AppHandle,
 }
 
@@ -82,8 +79,8 @@ impl JsonRpcResponse {
 
 // ── Router ───────────────────────────────────────────────────────────────────
 
-pub fn build_router(db: DbArc, app_handle: AppHandle) -> Router {
-    let state = Arc::new(McpState { db, app_handle });
+pub fn build_router(fs: Arc<FilesystemStorage>, app_handle: AppHandle) -> Router {
+    let state = Arc::new(McpState { fs, app_handle });
 
     let cors = CorsLayer::new()
         .allow_methods([Method::POST, Method::OPTIONS])
@@ -155,199 +152,115 @@ async fn dispatch(
 fn tools_manifest() -> Value {
     json!([
         {
-            "name": "list_collections",
-            "description": "List all collections in MarkdownUI",
+            "name": "list_roots",
+            "description": "List all registered root folders",
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
         },
         {
-            "name": "get_collection",
-            "description": "Get a single collection by ID",
+            "name": "list_directory",
+            "description": "List the children (folders and .md documents) of a directory",
             "inputSchema": {
                 "type": "object",
-                "properties": { "id": { "type": "number", "description": "Collection ID" } },
-                "required": ["id"]
+                "properties": { "path": { "type": "string", "description": "Absolute path of the directory" } },
+                "required": ["path"]
             }
         },
         {
-            "name": "create_collection",
-            "description": "Create a new collection",
+            "name": "get_entry",
+            "description": "Get a file (with content) or folder metadata by absolute path",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "read_file",
+            "description": "Read the markdown content of a .md file",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "create_file",
+            "description": "Create a new .md document (extension appended automatically if missing)",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "name": { "type": "string" },
-                    "description": { "type": "string" }
-                },
-                "required": ["name"]
-            }
-        },
-        {
-            "name": "update_collection",
-            "description": "Update an existing collection",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number" },
-                    "name": { "type": "string" },
-                    "description": { "type": "string" }
-                },
-                "required": ["id", "name"]
-            }
-        },
-        {
-            "name": "delete_collection",
-            "description": "Delete a collection and all its documents",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "id": { "type": "number" } },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "list_documents",
-            "description": "List all documents in a collection",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "collection_id": { "type": "number" } },
-                "required": ["collection_id"]
-            }
-        },
-        {
-            "name": "get_document",
-            "description": "Get a single document by ID (includes full content)",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "id": { "type": "number" } },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "create_document",
-            "description": "Create a new document in a collection, optionally inside a folder",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "collection_id": { "type": "number" },
-                    "folder_id": { "type": "number" },
+                    "parent_path": { "type": "string" },
                     "name": { "type": "string" },
                     "content": { "type": "string" }
                 },
-                "required": ["collection_id", "name", "content"]
+                "required": ["parent_path", "name", "content"]
             }
         },
         {
-            "name": "update_document",
-            "description": "Update a document's name and/or content",
+            "name": "update_file",
+            "description": "Update a document's content (and rename it if `name` changed)",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "number" },
+                    "path": { "type": "string" },
                     "name": { "type": "string" },
                     "content": { "type": "string" }
                 },
-                "required": ["id", "name", "content"]
+                "required": ["path", "name", "content"]
             }
         },
         {
-            "name": "delete_document",
-            "description": "Delete a document by ID",
+            "name": "create_directory",
+            "description": "Create a new subdirectory inside a parent directory",
             "inputSchema": {
                 "type": "object",
-                "properties": { "id": { "type": "number" } },
-                "required": ["id"]
+                "properties": {
+                    "parent_path": { "type": "string" },
+                    "name": { "type": "string" }
+                },
+                "required": ["parent_path", "name"]
             }
         },
         {
-            "name": "search_documents",
-            "description": "Search documents by name or content across all collections",
+            "name": "rename_entry",
+            "description": "Rename a file or folder (kept in place)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "new_name": { "type": "string" }
+                },
+                "required": ["path", "new_name"]
+            }
+        },
+        {
+            "name": "delete_entry",
+            "description": "Delete a file or folder (recursive for folders)",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "move_entry",
+            "description": "Move a file or folder into a new parent directory. Only works within the same volume.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "new_parent_path": { "type": "string" }
+                },
+                "required": ["path", "new_parent_path"]
+            }
+        },
+        {
+            "name": "search",
+            "description": "Search documents by filename or content across all root folders",
             "inputSchema": {
                 "type": "object",
                 "properties": { "query": { "type": "string" } },
                 "required": ["query"]
-            }
-        },
-        {
-            "name": "create_folder",
-            "description": "Create a new folder in a collection, optionally nested under a parent folder",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "collection_id": { "type": "number" },
-                    "parent_folder_id": { "type": "number" },
-                    "name": { "type": "string" }
-                },
-                "required": ["collection_id", "name"]
-            }
-        },
-        {
-            "name": "list_folders",
-            "description": "List all folders in a collection",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "collection_id": { "type": "number" } },
-                "required": ["collection_id"]
-            }
-        },
-        {
-            "name": "update_folder",
-            "description": "Update a folder's name",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number" },
-                    "name": { "type": "string" }
-                },
-                "required": ["id", "name"]
-            }
-        },
-        {
-            "name": "delete_folder",
-            "description": "Delete a folder and cascade-delete its contents",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "id": { "type": "number" } },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "move_document",
-            "description": "Move a document to a different folder (null = collection root)",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number" },
-                    "folder_id": { "type": "number" }
-                },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "get_folder",
-            "description": "Get a single folder by ID",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "id": { "type": "number" } },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "move_folder",
-            "description": "Move a folder to a different parent (null = collection root)",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number" },
-                    "parent_folder_id": { "type": "number" }
-                },
-                "required": ["id"]
-            }
-        },
-        {
-            "name": "list_folder_contents",
-            "description": "List all child folders and documents inside a folder",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "folder_id": { "type": "number" } },
-                "required": ["folder_id"]
             }
         }
     ])
@@ -355,14 +268,12 @@ fn tools_manifest() -> Value {
 
 // ── MCP event payload ──────────────────────────────────────────────────────
 
-/// Emitted to the frontend via `app_handle.emit_all("mcp-operation", …)`
+/// Emitted to the frontend via `app_handle.emit("mcp-operation", …)`
 /// after each write operation so the UI can animate the change.
 #[derive(Debug, Serialize, Clone)]
 struct McpEvent {
     operation: String,
-    id: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    collection_id: Option<i64>,
+    id: String,
     name: String,
 }
 
@@ -390,7 +301,7 @@ async fn handle_tool_call(state: Arc<McpState>, id: Option<Value>, params: Value
 
 /// Runs synchronously (called via spawn_blocking so it won't block the async runtime).
 fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let fs = &state.fs;
 
     // Helper: emit an event through the main window
     let emit_event = |event: McpEvent| {
@@ -400,251 +311,117 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
     };
 
     match name {
-        "list_collections" => {
-            let cols = db.get_all_collections().map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&cols).unwrap())
+        "list_roots" => {
+            let roots = fs.list_roots()?;
+            Ok(serde_json::to_string_pretty(&roots).unwrap())
         }
 
-        "get_collection" => {
-            let id = get_i64(&args, "id")?;
-            match db.get_collection(id).map_err(|e| e.to_string())? {
-                Some(c) => Ok(serde_json::to_string_pretty(&c).unwrap()),
-                None => Err(format!("Collection {id} not found")),
+        "list_directory" => {
+            let path = get_str(&args, "path")?;
+            let children = fs.list_children(&path)?;
+            Ok(serde_json::to_string_pretty(&children).unwrap())
+        }
+
+        "get_entry" => {
+            let path = get_str(&args, "path")?;
+            match fs.get_entry(&path)? {
+                Some(entry) => Ok(serde_json::to_string_pretty(&entry).unwrap()),
+                None => Err(format!("Entry not found: {path}")),
             }
         }
 
-        "create_collection" => {
-            let name = get_str(&args, "name")?;
-            let description = args.get("description").and_then(Value::as_str).map(String::from);
-            let col = db.create_collection(name, description).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&col).unwrap();
-            emit_event(McpEvent {
-                operation: "create_collection".into(),
-                id: col.id,
-                collection_id: None,
-                name: col.name.clone(),
-            });
-            Ok(result)
-        }
-
-        "update_collection" => {
-            let id = get_i64(&args, "id")?;
-            let name = get_str(&args, "name")?;
-            let description = args.get("description").and_then(Value::as_str).map(String::from);
-            let col = db.update_collection(id, name, description).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&col).unwrap();
-            emit_event(McpEvent {
-                operation: "update_collection".into(),
-                id: col.id,
-                collection_id: None,
-                name: col.name.clone(),
-            });
-            Ok(result)
-        }
-
-        "delete_collection" => {
-            let id = get_i64(&args, "id")?;
-            // Capture name before deletion
-            let name = db.get_collection(id)
-                .map_err(|e| e.to_string())?
-                .map(|c| c.name)
-                .unwrap_or_default();
-            let ok = db.delete_collection(id).map_err(|e| e.to_string())?;
-            emit_event(McpEvent {
-                operation: "delete_collection".into(),
-                id,
-                collection_id: None,
-                name,
-            });
-            Ok(format!("{{\"deleted\": {ok}}}"))
-        }
-
-        "list_documents" => {
-            let collection_id = get_i64(&args, "collection_id")?;
-            let docs = db
-                .get_documents_by_collection(collection_id)
-                .map_err(|e| e.to_string())?;
-            // Omit content to keep list responses compact
-            let slim: Vec<Value> = docs
-                .iter()
-                .map(|d| json!({
-                    "id": d.id,
-                    "collection_id": d.collection_id,
-                    "folder_id": d.folder_id,
-                    "name": d.name,
-                    "created_at": d.created_at,
-                    "updated_at": d.updated_at,
-                }))
-                .collect();
-            Ok(serde_json::to_string_pretty(&slim).unwrap())
-        }
-
-        "get_document" => {
-            let id = get_i64(&args, "id")?;
-            match db.get_document(id).map_err(|e| e.to_string())? {
-                Some(d) => Ok(serde_json::to_string_pretty(&d).unwrap()),
-                None => Err(format!("Document {id} not found")),
+        "read_file" => {
+            let path = get_str(&args, "path")?;
+            match fs.get_entry(&path)? {
+                Some(entry) => match entry.content {
+                    Some(c) => Ok(c),
+                    None => Err(format!("Not a readable file: {path}")),
+                },
+                None => Err(format!("File not found: {path}")),
             }
         }
 
-        "create_document" => {
-            let collection_id = get_i64(&args, "collection_id")?;
-            let folder_id = args.get("folder_id").and_then(Value::as_i64);
-            let name = get_str(&args, "name")?;
+        "create_file" => {
+            let parent_path = get_str(&args, "parent_path")?;
+            let file_name = get_str(&args, "name")?;
             let content = get_str(&args, "content")?;
-            let doc = db
-                .create_document(collection_id, folder_id, name, content)
-                .map_err(|e| e.to_string())?;
+            let doc = fs.create_document(&parent_path, &file_name, &content)?;
             let result = serde_json::to_string_pretty(&doc).unwrap();
             emit_event(McpEvent {
-                operation: "create_document".into(),
-                id: doc.id,
-                collection_id: Some(doc.collection_id),
+                operation: "create_file".into(),
+                id: doc.id.clone(),
                 name: doc.name.clone(),
             });
             Ok(result)
         }
 
-        "update_document" => {
-            let id = get_i64(&args, "id")?;
-            let name = get_str(&args, "name")?;
+        "update_file" => {
+            let path = get_str(&args, "path")?;
+            let file_name = get_str(&args, "name")?;
             let content = get_str(&args, "content")?;
-            let doc = db.update_document(id, name, content).map_err(|e| e.to_string())?;
+            let doc = fs.update_document(&path, &file_name, &content)?;
             let result = serde_json::to_string_pretty(&doc).unwrap();
             emit_event(McpEvent {
-                operation: "update_document".into(),
-                id: doc.id,
-                collection_id: Some(doc.collection_id),
+                operation: "update_file".into(),
+                id: doc.id.clone(),
                 name: doc.name.clone(),
             });
             Ok(result)
         }
 
-        "delete_document" => {
-            let id = get_i64(&args, "id")?;
-            // Capture collection_id and name before deletion
-            let doc_info = db.get_document(id).map_err(|e| e.to_string())?;
-            let collection_id = doc_info.as_ref().map(|d| d.collection_id);
-            let name = doc_info.map(|d| d.name).unwrap_or_default();
-            let ok = db.delete_document(id).map_err(|e| e.to_string())?;
+        "create_directory" => {
+            let parent_path = get_str(&args, "parent_path")?;
+            let dir_name = get_str(&args, "name")?;
+            let folder = fs.create_folder(&parent_path, &dir_name)?;
+            let result = serde_json::to_string_pretty(&folder).unwrap();
             emit_event(McpEvent {
-                operation: "delete_document".into(),
-                id,
-                collection_id,
-                name,
+                operation: "create_directory".into(),
+                id: folder.id.clone(),
+                name: folder.name.clone(),
+            });
+            Ok(result)
+        }
+
+        "rename_entry" => {
+            let path = get_str(&args, "path")?;
+            let new_name = get_str(&args, "new_name")?;
+            let entry = fs.rename_entry(&path, &new_name)?;
+            let result = serde_json::to_string_pretty(&entry).unwrap();
+            emit_event(McpEvent {
+                operation: "rename_entry".into(),
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+            });
+            Ok(result)
+        }
+
+        "delete_entry" => {
+            let path = get_str(&args, "path")?;
+            let ok = fs.delete_entry(&path)?;
+            emit_event(McpEvent {
+                operation: "delete_entry".into(),
+                id: path,
+                name: String::new(),
             });
             Ok(format!("{{\"deleted\": {ok}}}"))
         }
 
-        // ── Folder tools ───────────────────────────────────────────────────
-        "create_folder" => {
-            let collection_id = get_i64(&args, "collection_id")?;
-            let parent_folder_id = args.get("parent_folder_id").and_then(Value::as_i64);
-            let name = get_str(&args, "name")?;
-            let folder = db.create_folder(collection_id, parent_folder_id, name).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&folder).unwrap();
+        "move_entry" => {
+            let path = get_str(&args, "path")?;
+            let new_parent_path = get_str(&args, "new_parent_path")?;
+            let entry = fs.move_entry(&path, &new_parent_path)?;
+            let result = serde_json::to_string_pretty(&entry).unwrap();
             emit_event(McpEvent {
-                operation: "create_folder".into(),
-                id: folder.id,
-                collection_id: Some(folder.collection_id),
-                name: folder.name.clone(),
+                operation: "move_entry".into(),
+                id: entry.id.clone(),
+                name: entry.name.clone(),
             });
             Ok(result)
         }
 
-        "list_folders" => {
-            let collection_id = get_i64(&args, "collection_id")?;
-            let folders = db.get_folders_by_collection(collection_id).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&folders).unwrap())
-        }
-
-        "update_folder" => {
-            let id = get_i64(&args, "id")?;
-            let name = get_str(&args, "name")?;
-            let folder = db.update_folder(id, name).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&folder).unwrap();
-            emit_event(McpEvent {
-                operation: "update_folder".into(),
-                id: folder.id,
-                collection_id: Some(folder.collection_id),
-                name: folder.name.clone(),
-            });
-            Ok(result)
-        }
-
-        "delete_folder" => {
-            let id = get_i64(&args, "id")?;
-            let folder_info = db.get_folder(id).map_err(|e| e.to_string())?;
-            let collection_id = folder_info.as_ref().map(|f| f.collection_id);
-            let name = folder_info.map(|f| f.name).unwrap_or_default();
-            let ok = db.delete_folder(id).map_err(|e| e.to_string())?;
-            emit_event(McpEvent {
-                operation: "delete_folder".into(),
-                id,
-                collection_id,
-                name,
-            });
-            Ok(format!("{{\"deleted\": {ok}}}"))
-        }
-
-        "move_document" => {
-            let id = get_i64(&args, "id")?;
-            let folder_id = args.get("folder_id").and_then(Value::as_i64);
-            let doc = db.move_document(id, folder_id).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&doc).unwrap();
-            emit_event(McpEvent {
-                operation: "move_document".into(),
-                id: doc.id,
-                collection_id: Some(doc.collection_id),
-                name: doc.name.clone(),
-            });
-            Ok(result)
-        }
-
-        "get_folder" => {
-            let id = get_i64(&args, "id")?;
-            match db.get_folder(id).map_err(|e| e.to_string())? {
-                Some(f) => Ok(serde_json::to_string_pretty(&f).unwrap()),
-                None => Err(format!("Folder {id} not found")),
-            }
-        }
-
-        "move_folder" => {
-            let id = get_i64(&args, "id")?;
-            let parent_folder_id = args.get("parent_folder_id").and_then(Value::as_i64);
-            let folder = db.move_folder(id, parent_folder_id).map_err(|e| e.to_string())?;
-            let result = serde_json::to_string_pretty(&folder).unwrap();
-            emit_event(McpEvent {
-                operation: "move_folder".into(),
-                id: folder.id,
-                collection_id: Some(folder.collection_id),
-                name: folder.name.clone(),
-            });
-            Ok(result)
-        }
-
-        "list_folder_contents" => {
-            let folder_id = get_i64(&args, "folder_id")?;
-            let child_folders = db.get_folders_by_parent(folder_id).map_err(|e| e.to_string())?;
-            let docs = db.get_documents_by_folder(folder_id).map_err(|e| e.to_string())?;
-            // Slim document list (no content)
-            let slim_docs: Vec<Value> = docs.iter().map(|d| json!({
-                "id": d.id,
-                "collection_id": d.collection_id,
-                "folder_id": d.folder_id,
-                "name": d.name,
-                "created_at": d.created_at,
-                "updated_at": d.updated_at,
-            })).collect();
-            Ok(serde_json::to_string_pretty(&json!({
-                "folders": child_folders,
-                "documents": slim_docs,
-            })).unwrap())
-        }
-
-        "search_documents" => {
+        "search" => {
             let query = get_str(&args, "query")?;
-            let results = db.search_documents(&query).map_err(|e| e.to_string())?;
+            let results = fs.search(&query)?;
             Ok(serde_json::to_string_pretty(&results).unwrap())
         }
 
@@ -653,12 +430,6 @@ fn run_tool(state: Arc<McpState>, name: &str, args: Value) -> Result<String, Str
 }
 
 // ── Argument helpers ──────────────────────────────────────────────────────────
-
-fn get_i64(args: &Value, key: &str) -> Result<i64, String> {
-    args.get(key)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| format!("Missing or invalid argument: {key}"))
-}
 
 fn get_str(args: &Value, key: &str) -> Result<String, String> {
     args.get(key)
