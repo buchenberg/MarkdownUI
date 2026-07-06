@@ -9,6 +9,7 @@ mod config;
 
 use converter::{ExportFormat, convert_markdown, check_chrome_available, convert_html_to_pdf};
 use storage::TreeNode;
+use storage::SearchResult;
 use filesystem::FilesystemStorage;
 use config::StorageConfig;
 use std::sync::{Arc, Mutex, RwLock};
@@ -96,7 +97,7 @@ fn storage_move_entry(backend: FsState, id: String, new_parent_id: String) -> Re
 }
 
 #[tauri::command]
-fn storage_search(backend: FsState, query: String) -> Result<Vec<TreeNode>, String> {
+fn storage_search(backend: FsState, query: String) -> Result<Vec<SearchResult>, String> {
     backend.search(&query)
 }
 

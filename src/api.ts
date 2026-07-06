@@ -14,6 +14,16 @@ export interface TreeNode {
     updated_at: string;
 }
 
+export interface SearchResult {
+    id: string;
+    name: string;
+    parent_id: string | null;
+    kind: "folder" | "document";
+    created_at: string;
+    updated_at: string;
+    matched_line: string;
+}
+
 export type ExportFormat = "html" | "pdf";
 
 // ── Filesystem storage API ───────────────────────────────────────────────────
@@ -73,8 +83,8 @@ export async function moveEntry(id: string, newParentId: string): Promise<TreeNo
     return invoke<TreeNode>("storage_move_entry", { id, newParentId });
 }
 
-export async function searchEntries(query: string): Promise<TreeNode[]> {
-    return invoke<TreeNode[]>("storage_search", { query });
+export async function searchEntries(query: string): Promise<SearchResult[]> {
+    return invoke<SearchResult[]>("storage_search", { query });
 }
 
 // ── Export ───────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::config::StorageConfig;
-use crate::storage::{TreeNode, TreeNodeKind};
+use crate::storage::{SearchResult, TreeNode, TreeNodeKind};
 
 pub struct FilesystemStorage {
     config: Arc<RwLock<StorageConfig>>,
@@ -473,9 +473,9 @@ impl FilesystemStorage {
         })
     }
 
-    pub fn search(&self, query: &str) -> Result<Vec<TreeNode>, String> {
+    pub fn search(&self, query: &str) -> Result<Vec<SearchResult>, String> {
         let lower_query = query.to_lowercase();
-        let mut results: Vec<TreeNode> = Vec::new();
+        let mut results: Vec<SearchResult> = Vec::new();
 
         for (_name, root_path) in self.workspaces().into_iter() {
             if !root_path.is_dir() {
@@ -519,18 +519,59 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (y, m, d)
 }
 
+fn extract_matched_line(content: &str, query: &str) -> String {
+    for line in content.lines() {
+        if line.to_lowercase().contains(query) {
+            let trimmed = line.trim();
+            if trimmed.len() > 120 {
+                let mut end = 120;
+                while !trimmed.is_char_boundary(end) {
+                    end -= 1;
+                }
+                return trimmed[..end].to_string();
+            }
+            return trimmed.to_string();
+        }
+    }
+    // Fallback: first non-empty line
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            if trimmed.len() > 120 {
+                let mut end = 120;
+                while !trimmed.is_char_boundary(end) {
+                    end -= 1;
+                }
+                return trimmed[..end].to_string();
+            }
+            return trimmed.to_string();
+        }
+    }
+    "(empty)".to_string()
+}
+
+const MAX_SEARCH_RESULTS: usize = 50;
+
 fn walk_for_search(
     dir: &Path,
     parent_id: &str,
     query: &str,
-    results: &mut Vec<TreeNode>,
+    results: &mut Vec<SearchResult>,
 ) -> Result<(), String> {
+    if results.len() >= MAX_SEARCH_RESULTS {
+        return Ok(());
+    }
+
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Ok(()),
     };
 
     for entry in entries {
+        if results.len() >= MAX_SEARCH_RESULTS {
+            return Ok(());
+        }
+
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -552,17 +593,14 @@ fn walk_for_search(
             walk_for_search(&path, &child_id, query, results)?;
         } else if file_type.is_file() {
             let lower_name = file_name.to_lowercase();
-            // Check filename match
             let name_match = lower_name.contains(query);
-            // Check content match
-            let content_match = if !name_match {
-                match fs::read_to_string(&path) {
-                    Ok(c) => c.to_lowercase().contains(query),
-                    Err(_) => false,
-                }
-            } else {
-                false
+
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
             };
+
+            let content_match = !name_match && content.to_lowercase().contains(query);
 
             if name_match || content_match {
                 if file_name.ends_with(".md") {
@@ -573,14 +611,19 @@ fn walk_for_search(
                     let (created_at, updated_at) =
                         FilesystemStorage::metadata_to_timestamps(&meta);
                     let name = strip_md_suffix(&file_name);
-                    results.push(TreeNode {
+                    let matched_line = if name_match && !content_match {
+                        extract_matched_line(&content, query)
+                    } else {
+                        extract_matched_line(&content, query)
+                    };
+                    results.push(SearchResult {
                         id: path.to_string_lossy().to_string(),
                         parent_id: Some(parent_id.to_string()),
                         name,
                         kind: TreeNodeKind::Document,
-                        content: None,
                         created_at,
                         updated_at,
+                        matched_line,
                     });
                 }
             }

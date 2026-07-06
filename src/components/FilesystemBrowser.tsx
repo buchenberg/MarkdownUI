@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { TreeNode } from "../api";
+import type { TreeNode, SearchResult } from "../api";
 import * as api from "../api";
 import { parseHeadings } from "../utils/headings";
 import { getParentPath } from "../utils/paths";
@@ -55,6 +55,84 @@ export default function FilesystemBrowser({
 }: FilesystemBrowserProps) {
     const registryRef = useRef<Map<string, () => void>>(new Map());
     const dragState = useRef<string | null>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+    const [query, setQuery] = useState("");
+    const [results, setResults] = useState<SearchResult[] | null>(null);
+    const [searching, setSearching] = useState(false);
+
+    // Debounced search
+    useEffect(() => {
+        const trimmed = query.trim();
+        if (!trimmed) {
+            setResults(null);
+            return;
+        }
+        setSearching(true);
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const r = await api.searchEntries(trimmed);
+                setResults(r);
+            } catch (err) {
+                console.error("Search failed:", err);
+                setResults([]);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(debounceRef.current);
+    }, [query]);
+
+    // Re-run search when roots change while query is active
+    useEffect(() => {
+        const trimmed = query.trim();
+        if (!trimmed) return;
+        setSearching(true);
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const r = await api.searchEntries(trimmed);
+                setResults(r);
+            } catch (err) {
+                console.error("Search failed:", err);
+                setResults([]);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(debounceRef.current);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [roots]);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key === "F") {
+                e.preventDefault();
+                searchRef.current?.focus();
+                return;
+            }
+            if (e.key === "Escape") {
+                const el = document.activeElement;
+                if (el && (el === searchRef.current || (el as HTMLElement).closest?.(".filesystem-browser"))) {
+                    setQuery("");
+                    setResults(null);
+                }
+            }
+        };
+        document.addEventListener("keydown", handler);
+        return () => document.removeEventListener("keydown", handler);
+    }, []);
+
+    const handleResultClick = async (result: SearchResult) => {
+        try {
+            const entry = await api.getEntry(result.id);
+            if (entry) onDocumentSelect(entry);
+        } catch (err) {
+            console.error("Failed to open search result:", err);
+        }
+        setQuery("");
+        setResults(null);
+    };
 
     const ctxValue: TreeContextValue = {
         refreshPath: (path) => {
@@ -70,23 +148,87 @@ export default function FilesystemBrowser({
 
     return (
         <TreeContext.Provider value={ctxValue}>
-            <div className="flex flex-col h-full overflow-hidden">
-                <div className="flex-1 overflow-y-auto py-1">
-                    {roots.length === 0 && (
-                        <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
-                            No workspace roots. Open Settings → Storage to add a folder.
+            <div className="flex flex-col h-full overflow-hidden filesystem-browser">
+                {roots.length > 0 && (
+                    <div className="flex-shrink-0 px-2 py-1.5 border-b border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-1.5">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 dark:text-gray-500 flex-shrink-0">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                            </svg>
+                            <input
+                                ref={searchRef}
+                                type="text"
+                                placeholder="Search documents..."
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                className="flex-1 bg-transparent text-sm text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 outline-none min-w-0"
+                            />
+                            {query && (
+                                <button
+                                    onClick={() => { setQuery(""); setResults(null); }}
+                                    className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-0.5"
+                                    title="Clear search"
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
+                    </div>
+                )}
+                <div className="flex-1 overflow-y-auto py-1">
+                    {query ? (
+                        <div>
+                            {searching && results === null && (
+                                <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
+                                    Searching...
+                                </div>
+                            )}
+                            {results !== null && results.length === 0 && (
+                                <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
+                                    No results for "{query}"
+                                </div>
+                            )}
+                            {results !== null && results.length > 0 && (
+                                results.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
+                                        onClick={() => handleResultClick(r)}
+                                    >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-400 flex-shrink-0 mt-0.5">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                            <polyline points="14 2 14 8 20 8" />
+                                        </svg>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm text-gray-700 dark:text-gray-300 truncate">{r.name}</div>
+                                            <div className="text-xs text-gray-400 dark:text-gray-500 italic truncate">{r.matched_line}</div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            {roots.length === 0 && (
+                                <div className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
+                                    No workspace roots. Open Settings → Storage to add a folder.
+                                </div>
+                            )}
+                            {roots.map((root) => (
+                                <FsRootNode
+                                    key={root.id}
+                                    root={root}
+                                    onHeadingClick={onHeadingClick}
+                                    onRootsChanged={onRootsChanged}
+                                    onRemoveWorkspaceRoot={onRemoveWorkspaceRoot}
+                                    mcpAnimatingIds={mcpAnimatingIds}
+                                />
+                            ))}
+                        </>
                     )}
-                    {roots.map((root) => (
-                        <FsRootNode
-                            key={root.id}
-                            root={root}
-                            onHeadingClick={onHeadingClick}
-                            onRootsChanged={onRootsChanged}
-                            onRemoveWorkspaceRoot={onRemoveWorkspaceRoot}
-                            mcpAnimatingIds={mcpAnimatingIds}
-                        />
-                    ))}
                 </div>
             </div>
         </TreeContext.Provider>

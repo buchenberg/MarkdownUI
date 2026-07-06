@@ -18,3 +18,14 @@ pub struct TreeNode {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub kind: TreeNodeKind,
+    pub created_at: String,
+    pub updated_at: String,
+    pub matched_line: String,
+}

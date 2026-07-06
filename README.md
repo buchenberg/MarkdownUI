@@ -107,7 +107,7 @@ Once running, agents have access to 11 path/file-centric tools:
 | `rename_entry` | Rename a file or folder (kept in place) |
 | `delete_entry` | Delete a file or folder (recursive for folders) |
 | `move_entry` | Move a file or folder into a new parent directory (same volume only) |
-| `search` | Search documents by filename or content across all root folders |
+| `search` | Search documents by filename or content across all root folders. Returns matching files with a snippet of the first matching line. |
 
 ### Agent Configuration
 
