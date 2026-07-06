@@ -2,7 +2,7 @@
 
 A Markdown document viewer and editor with embedded Mermaid diagram support, built with Tauri + React.
 
-![MarkdownUI Screenshot](./docs/MarkdownUI_Windows_Screenshot.png)
+![MarkdownUI Screenshot](./docs/MarkdownUI_Screenshot.png)
 
 ## Features
 
