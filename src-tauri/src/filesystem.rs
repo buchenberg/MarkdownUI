@@ -28,11 +28,6 @@ impl FilesystemStorage {
             .unwrap_or_default()
     }
 
-    /// IDs are now always absolute paths; resolution is trivial.
-    fn resolve_path(&self, id: &str) -> Result<PathBuf, String> {
-        Ok(PathBuf::from(id))
-    }
-
     fn is_hidden(entry: &fs::DirEntry) -> bool {
         entry
             .file_name()
@@ -92,7 +87,7 @@ impl FilesystemStorage {
         } else if file_type.is_file() {
             let raw_name = entry.file_name().to_string_lossy().to_string();
             if raw_name.ends_with(".md") {
-                let name = raw_name.strip_suffix(".md").unwrap_or(&raw_name).to_string();
+                let name = strip_md_suffix(&raw_name);
                 Ok(Some(TreeNode {
                     id: path.to_string_lossy().to_string(),
                     parent_id: Some(parent_id.to_string()),
@@ -206,7 +201,7 @@ impl FilesystemStorage {
             let content = fs::read_to_string(&path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             let display_name = if name.ends_with(".md") {
-                name.strip_suffix(".md").unwrap_or(&name).to_string()
+                strip_md_suffix(&name)
             } else {
                 name
             };
@@ -230,7 +225,7 @@ impl FilesystemStorage {
     }
 
     pub fn list_children(&self, parent_id: &str) -> Result<Vec<TreeNode>, String> {
-        let dir_path = self.resolve_path(parent_id)?;
+        let dir_path = PathBuf::from(parent_id);
 
         if !dir_path.is_dir() {
             return Err(format!("Not a directory: {}", dir_path.display()));
@@ -261,7 +256,7 @@ impl FilesystemStorage {
     }
 
     pub fn create_folder(&self, parent_id: &str, name: &str) -> Result<TreeNode, String> {
-        let parent_path = self.resolve_path(parent_id)?;
+        let parent_path = PathBuf::from(parent_id);
         let new_path = parent_path.join(name);
 
         fs::create_dir(&new_path)
@@ -288,12 +283,8 @@ impl FilesystemStorage {
         name: &str,
         content: &str,
     ) -> Result<TreeNode, String> {
-        let parent_path = self.resolve_path(parent_id)?;
-        let filename = if name.ends_with(".md") {
-            name.to_string()
-        } else {
-            format!("{}.md", name)
-        };
+        let parent_path = PathBuf::from(parent_id);
+        let filename = ensure_md_extension(name);
         let new_path = parent_path.join(&filename);
 
         fs::write(&new_path, content)
@@ -302,10 +293,7 @@ impl FilesystemStorage {
         let meta = fs::metadata(&new_path)
             .map_err(|e| format!("Failed to read metadata: {}", e))?;
         let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
-        let display_name = filename
-            .strip_suffix(".md")
-            .unwrap_or(&filename)
-            .to_string();
+        let display_name = strip_md_suffix(&filename);
 
         Ok(TreeNode {
             id: new_path.to_string_lossy().to_string(),
@@ -329,11 +317,7 @@ impl FilesystemStorage {
             return Err(format!("Not a file: {}", old_path.display()));
         }
 
-        let new_filename = if name.ends_with(".md") {
-            name.to_string()
-        } else {
-            format!("{}.md", name)
-        };
+        let new_filename = ensure_md_extension(name);
 
         let new_path = if let Some(parent) = old_path.parent() {
             parent.join(&new_filename)
@@ -384,11 +368,7 @@ impl FilesystemStorage {
 
         let new_path = if let Some(parent) = old_path.parent() {
             if is_file {
-                let filename = if new_name.ends_with(".md") {
-                    new_name.to_string()
-                } else {
-                    format!("{}.md", new_name)
-                };
+                let filename = ensure_md_extension(new_name);
                 parent.join(&filename)
             } else {
                 parent.join(new_name)
@@ -455,7 +435,7 @@ impl FilesystemStorage {
             .map(|m| m.is_dir())
             .unwrap_or(false);
 
-        let dest_dir = self.resolve_path(new_parent_id)?;
+        let dest_dir = PathBuf::from(new_parent_id);
         let file_name = old_path
             .file_name()
             .ok_or_else(|| format!("Invalid source path: {}", old_path.display()))?;
@@ -475,14 +455,7 @@ impl FilesystemStorage {
         let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
         let name = new_path
             .file_name()
-            .map(|n| {
-                let s = n.to_string_lossy().to_string();
-                if s.ends_with(".md") {
-                    s.strip_suffix(".md").unwrap_or(&s).to_string()
-                } else {
-                    s
-                }
-            })
+            .map(|n| strip_md_suffix(&n.to_string_lossy()))
             .unwrap_or_default();
 
         Ok(TreeNode {
@@ -517,6 +490,20 @@ impl FilesystemStorage {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/// Strip the `.md` suffix from a filename, returning the bare name.
+fn strip_md_suffix(name: &str) -> String {
+    name.strip_suffix(".md").unwrap_or(name).to_string()
+}
+
+/// If `name` doesn't already end with `.md`, append the extension.
+fn ensure_md_extension(name: &str) -> String {
+    if name.ends_with(".md") {
+        name.to_string()
+    } else {
+        format!("{}.md", name)
+    }
+}
 
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719468;
@@ -585,10 +572,7 @@ fn walk_for_search(
                     };
                     let (created_at, updated_at) =
                         FilesystemStorage::metadata_to_timestamps(&meta);
-                    let name = file_name
-                        .strip_suffix(".md")
-                        .unwrap_or(&file_name)
-                        .to_string();
+                    let name = strip_md_suffix(&file_name);
                     results.push(TreeNode {
                         id: path.to_string_lossy().to_string(),
                         parent_id: Some(parent_id.to_string()),

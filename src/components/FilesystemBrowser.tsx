@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { TreeNode } from "../api";
 import * as api from "../api";
-import { slugify } from "../utils/slugify";
+import { parseHeadings } from "../utils/headings";
+import { getParentPath } from "../utils/paths";
+import InlineRename from "./InlineRename";
+import IconAction from "./IconAction";
 
 interface FilesystemBrowserProps {
     roots: TreeNode[];
@@ -14,8 +17,6 @@ interface FilesystemBrowserProps {
 }
 
 // ── Tree refresh/drag context ────────────────────────────────────────────────
-// Lets a row trigger a refresh of any parent directory after a mutation,
-// and shares the in-flight drag source id across the tree.
 
 interface TreeContextValue {
     refreshPath: (path: string) => void;
@@ -34,11 +35,14 @@ function useTreeContext(): TreeContextValue {
     return ctx;
 }
 
-// True if `path` is a descendant of `ancestor` (i.e. lives underneath it).
+// ── Path helpers ─────────────────────────────────────────────────────────────
+
 function isDescendant(ancestor: string, path: string): boolean {
     if (path === ancestor) return false;
     return path.startsWith(ancestor + "/") || path.startsWith(ancestor + "\\");
 }
+
+// ── Main component ───────────────────────────────────────────────────────────
 
 export default function FilesystemBrowser({
     roots,
@@ -89,6 +93,121 @@ export default function FilesystemBrowser({
     );
 }
 
+// ── useExpandableDir hook ────────────────────────────────────────────────────
+
+function useExpandableDir(dirId: string) {
+    const { register, unregister } = useTreeContext();
+    const [expanded, setExpanded] = useState(false);
+    const [children, setChildren] = useState<TreeNode[] | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
+
+    const refreshChildren = async () => {
+        try {
+            const items = await api.listChildren(dirId);
+            setChildren(items);
+        } catch (err) {
+            console.error("Failed to list children:", err);
+        }
+    };
+
+    useEffect(() => {
+        register(dirId, refreshChildren);
+        return () => unregister(dirId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dirId]);
+
+    const toggle = async () => {
+        if (expanded) {
+            setExpanded(false);
+            return;
+        }
+        setExpanded(true);
+        if (children === null) {
+            setLoading(true);
+            await refreshChildren();
+            setLoading(false);
+        }
+    };
+
+    const create = async (kind: "folder" | "document") => {
+        if (!expanded) {
+            setExpanded(true);
+            if (children === null) {
+                setLoading(true);
+                await refreshChildren();
+                setLoading(false);
+            }
+        }
+        const placeholder = kind === "folder" ? "New Folder" : "New Document";
+        try {
+            const node =
+                kind === "folder"
+                    ? await api.createFolderEntry(dirId, placeholder)
+                    : await api.createDocEntry(dirId, placeholder, "");
+            await refreshChildren();
+            setRenamingId(node.id);
+            setNewlyCreatedId(node.id);
+        } catch (err) {
+            console.error("Failed to create entry:", err);
+            alert(`Failed to create ${kind}: ${err}`);
+        }
+    };
+
+    const renameCommit = async (id: string, newName: string) => {
+        setRenamingId(null);
+        const wasNew = newlyCreatedId === id;
+        setNewlyCreatedId(null);
+        try {
+            await api.renameEntry(id, newName);
+            await refreshChildren();
+        } catch (err) {
+            console.error("Rename failed:", err);
+            alert(`Rename failed: ${err}`);
+            if (wasNew) {
+                try {
+                    await api.deleteEntry(id);
+                    await refreshChildren();
+                } catch {
+                    /* ignore */
+                }
+            }
+        }
+    };
+
+    const renameCancel = async (id: string) => {
+        setRenamingId(null);
+        if (newlyCreatedId === id) {
+            setNewlyCreatedId(null);
+            try {
+                await api.deleteEntry(id);
+                await refreshChildren();
+            } catch (err) {
+                console.error("Failed to clean up placeholder:", err);
+            }
+        }
+    };
+
+    const startRename = (id: string) => {
+        setRenamingId(id);
+        setNewlyCreatedId(null);
+    };
+
+    return {
+        expanded,
+        children,
+        loading,
+        renamingId,
+        refreshChildren,
+        toggle,
+        create,
+        renameCommit,
+        renameCancel,
+        startRename,
+    };
+}
+
 // ── Root node ─────────────────────────────────────────────────────────────────
 
 function FsRootNode({
@@ -104,121 +223,25 @@ function FsRootNode({
     onRemoveWorkspaceRoot?: (id: string) => Promise<void>;
     mcpAnimatingIds?: Set<string>;
 }) {
-    const { register, unregister } = useTreeContext();
-    const [expanded, setExpanded] = useState(false);
-    const [children, setChildren] = useState<TreeNode[] | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [renamingId, setRenamingId] = useState<string | null>(null);
-    const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
-
-    const refreshChildren = async () => {
-        try {
-            const items = await api.listChildren(root.id);
-            setChildren(items);
-        } catch (err) {
-            console.error("Failed to list children:", err);
-        }
-    };
-
-    useEffect(() => {
-        register(root.id, refreshChildren);
-        return () => unregister(root.id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [root.id]);
-
-    const handleToggle = async () => {
-        if (expanded) {
-            setExpanded(false);
-            return;
-        }
-        setExpanded(true);
-        if (children === null) {
-            setLoading(true);
-            await refreshChildren();
-            setLoading(false);
-        }
-    };
-
-    const handleCreate = async (kind: "folder" | "document") => {
-        if (!expanded) {
-            setExpanded(true);
-            if (children === null) {
-                setLoading(true);
-                await refreshChildren();
-                setLoading(false);
-            }
-        }
-        const placeholder = kind === "folder" ? "New Folder" : "New Document";
-        try {
-            const node =
-                kind === "folder"
-                    ? await api.createFolderEntry(root.id, placeholder)
-                    : await api.createDocEntry(root.id, placeholder, "");
-            await refreshChildren();
-            setRenamingId(node.id);
-            setNewlyCreatedId(node.id);
-        } catch (err) {
-            console.error("Failed to create entry:", err);
-            alert(`Failed to create ${kind}: ${err}`);
-        }
-    };
-
-    const handleRenameCommit = async (id: string, newName: string) => {
-        setRenamingId(null);
-        const wasNew = newlyCreatedId === id;
-        setNewlyCreatedId(null);
-        try {
-            await api.renameEntry(id, newName);
-            await refreshChildren();
-        } catch (err) {
-            console.error("Rename failed:", err);
-            alert(`Rename failed: ${err}`);
-            if (wasNew) {
-                // clean up orphan placeholder
-                try {
-                    await api.deleteEntry(id);
-                    await refreshChildren();
-                } catch {
-                    /* ignore */
-                }
-            }
-        }
-    };
-
-    const handleRenameCancel = async (id: string) => {
-        setRenamingId(null);
-        if (newlyCreatedId === id) {
-            setNewlyCreatedId(null);
-            try {
-                await api.deleteEntry(id);
-                await refreshChildren();
-            } catch (err) {
-                console.error("Failed to clean up placeholder:", err);
-            }
-        }
-    };
-
+    const dir = useExpandableDir(root.id);
     return (
         <FsDirBody
-            node={root}
-            depth={0}
+            node        = {root}
+            depth       = {0}
             isRoot
-            expanded={expanded}
-            children={children}
-            loading={loading}
-            renamingId={renamingId}
-            mcpAnimatingIds={mcpAnimatingIds}
-            onToggle={handleToggle}
-            onHeadingClick={onHeadingClick}
-            onCreate={handleCreate}
-            onRenameStart={(id) => {
-                setRenamingId(id);
-                setNewlyCreatedId(null);
-            }}
-            onRenameCommit={handleRenameCommit}
-            onRenameCancel={handleRenameCancel}
-            onRemoveWorkspaceRoot={onRemoveWorkspaceRoot}
-            onRootsChanged={onRootsChanged}
+            expanded    = {dir.expanded}
+            children    = {dir.children}
+            loading     = {dir.loading}
+            renamingId  = {dir.renamingId}
+            mcpAnimatingIds = {mcpAnimatingIds}
+            onToggle          = {dir.toggle}
+            onHeadingClick    = {onHeadingClick}
+            onCreate          = {dir.create}
+            onRenameStart     = {dir.startRename}
+            onRenameCommit    = {dir.renameCommit}
+            onRenameCancel    = {dir.renameCancel}
+            onRemoveWorkspaceRoot = {onRemoveWorkspaceRoot}
+            onRootsChanged    = {onRootsChanged}
         />
     );
 }
@@ -236,123 +259,70 @@ function FsFolderNode({
     onHeadingClick?: (docId: string, headingId: string) => void;
     mcpAnimatingIds?: Set<string>;
 }) {
-    const { register, unregister } = useTreeContext();
-    const [expanded, setExpanded] = useState(false);
-    const [children, setChildren] = useState<TreeNode[] | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [renamingId, setRenamingId] = useState<string | null>(null);
-    const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
-
-    const refreshChildren = async () => {
-        try {
-            const items = await api.listChildren(node.id);
-            setChildren(items);
-        } catch (err) {
-            console.error("Failed to list children:", err);
-        }
-    };
-
-    useEffect(() => {
-        register(node.id, refreshChildren);
-        return () => unregister(node.id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [node.id]);
-
-    const handleToggle = async () => {
-        if (expanded) {
-            setExpanded(false);
-            return;
-        }
-        setExpanded(true);
-        if (children === null) {
-            setLoading(true);
-            await refreshChildren();
-            setLoading(false);
-        }
-    };
-
-    const handleCreate = async (kind: "folder" | "document") => {
-        if (!expanded) {
-            setExpanded(true);
-            if (children === null) {
-                setLoading(true);
-                await refreshChildren();
-                setLoading(false);
-            }
-        }
-        const placeholder = kind === "folder" ? "New Folder" : "New Document";
-        try {
-            const created =
-                kind === "folder"
-                    ? await api.createFolderEntry(node.id, placeholder)
-                    : await api.createDocEntry(node.id, placeholder, "");
-            await refreshChildren();
-            setRenamingId(created.id);
-            setNewlyCreatedId(created.id);
-        } catch (err) {
-            console.error("Failed to create entry:", err);
-            alert(`Failed to create ${kind}: ${err}`);
-        }
-    };
-
-    const handleRenameCommit = async (id: string, newName: string) => {
-        setRenamingId(null);
-        const wasNew = newlyCreatedId === id;
-        setNewlyCreatedId(null);
-        try {
-            await api.renameEntry(id, newName);
-            await refreshChildren();
-        } catch (err) {
-            console.error("Rename failed:", err);
-            alert(`Rename failed: ${err}`);
-            if (wasNew) {
-                try {
-                    await api.deleteEntry(id);
-                    await refreshChildren();
-                } catch {
-                    /* ignore */
-                }
-            }
-        }
-    };
-
-    const handleRenameCancel = async (id: string) => {
-        setRenamingId(null);
-        if (newlyCreatedId === id) {
-            setNewlyCreatedId(null);
-            try {
-                await api.deleteEntry(id);
-                await refreshChildren();
-            } catch (err) {
-                console.error("Failed to clean up placeholder:", err);
-            }
-        }
-    };
-
+    const dir = useExpandableDir(node.id);
     return (
         <FsDirBody
-            node={node}
-            depth={depth}
-            isRoot={false}
-            expanded={expanded}
-            children={children}
-            loading={loading}
-            renamingId={renamingId}
-            mcpAnimatingIds={mcpAnimatingIds}
-            onToggle={handleToggle}
-            onHeadingClick={onHeadingClick}
-            onCreate={handleCreate}
-            onRenameStart={(id) => {
-                setRenamingId(id);
-                setNewlyCreatedId(null);
-            }}
-            onRenameCommit={handleRenameCommit}
-            onRenameCancel={handleRenameCancel}
+            node        = {node}
+            depth       = {depth}
+            isRoot      = {false}
+            expanded    = {dir.expanded}
+            children    = {dir.children}
+            loading     = {dir.loading}
+            renamingId  = {dir.renamingId}
+            mcpAnimatingIds = {mcpAnimatingIds}
+            onToggle          = {dir.toggle}
+            onHeadingClick    = {onHeadingClick}
+            onCreate          = {dir.create}
+            onRenameStart     = {dir.startRename}
+            onRenameCommit    = {dir.renameCommit}
+            onRenameCancel    = {dir.renameCancel}
         />
     );
 }
 
-// ── Shared directory body (renders header + children) ────────────────────────
+// ── Delete confirmation ──────────────────────────────────────────────────────
+
+function DeleteConfirm({
+    entryName,
+    isFolder,
+    indent,
+    onConfirm,
+    onCancel,
+}: {
+    entryName: string;
+    isFolder: boolean;
+    indent: number;
+    onConfirm: () => void;
+    onCancel: () => void;
+}) {
+    return (
+        <div
+            style={{ paddingLeft: indent }}
+            className="pr-2 py-1 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800"
+        >
+            <p className="text-xs text-red-700 dark:text-red-300 mb-1">
+                Delete "{entryName}"{isFolder ? " and all of its contents" : ""}
+                ? This cannot be undone.
+            </p>
+            <div className="flex gap-1.5">
+                <button
+                    onClick={onConfirm}
+                    className="px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                    Delete
+                </button>
+                <button
+                    onClick={onCancel}
+                    className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
+                >
+                    Cancel
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Shared directory body ────────────────────────────────────────────────────
 
 function FsDirBody({
     node,
@@ -392,13 +362,12 @@ function FsDirBody({
     const { dragState, refreshPath, selectedDocId, onDocumentSelect } = useTreeContext();
     const [isDragOver, setIsDragOver] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const indent = depth === 0 ? undefined : 28 + depth * 16;
+    const indent = depth === 0 ? 12 : 28 + depth * 16;
 
     const canDropHere = (): boolean => {
         const src = dragState.current;
         if (!src) return false;
         if (src === node.id) return false;
-        // can't move a folder into its own descendant
         if (isDescendant(src, node.id)) return false;
         return true;
     };
@@ -412,7 +381,6 @@ function FsDirBody({
         try {
             await api.moveEntry(src, node.id);
             refreshPath(node.id);
-            // best-effort refresh of the source's parent
             const srcParent = getParentPath(src);
             if (srcParent) refreshPath(srcParent);
         } catch (err) {
@@ -445,44 +413,31 @@ function FsDirBody({
                         ? "bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400"
                         : ""
                 } ${mcpAnimatingIds?.has(node.id) ? "mcp-animate-pulse" : ""}`}
-                style={indent ? { paddingLeft: indent } : { paddingLeft: 12 }}
+                style={{ paddingLeft: indent }}
                 draggable={!isRoot && renamingId !== node.id}
                 onDragStart={(e) => {
                     if (isRoot) return;
                     dragState.current = node.id;
                     e.dataTransfer.effectAllowed = "move";
-                    try {
-                        e.dataTransfer.setData("text/plain", node.id);
-                    } catch {
-                        /* ignore */
-                    }
+                    try { e.dataTransfer.setData("text/plain", node.id); } catch { /* ignore */ }
                 }}
-                onDragEnd={() => {
-                    dragState.current = null;
-                }}
+                onDragEnd={() => { dragState.current = null; }}
                 onClick={onToggle}
                 onDoubleClick={(e) => {
-                    if (!isRoot) {
-                        e.stopPropagation();
-                        onRenameStart(node.id);
-                    }
+                    if (!isRoot) { e.stopPropagation(); onRenameStart(node.id); }
                 }}
-                onDragOver={(e) => {
-                    if (canDropHere()) {
-                        e.preventDefault();
-                        setIsDragOver(true);
-                    }
-                }}
+                onDragOver={(e) => { if (canDropHere()) { e.preventDefault(); setIsDragOver(true); } }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
             >
-                <span
-                    className={`flex-shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 dark:text-gray-500 transition-transform duration-100 ${expanded ? "" : "-rotate-90"}`}
-                >
+                {/* Chevron */}
+                <span className={`flex-shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 dark:text-gray-500 transition-transform duration-100 ${expanded ? "" : "-rotate-90"}`}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M7 10l5 5 5-5z" />
                     </svg>
                 </span>
+
+                {/* Folder icon */}
                 <span className="flex-shrink-0 text-yellow-500 dark:text-yellow-400">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                         {expanded ? (
@@ -493,27 +448,23 @@ function FsDirBody({
                     </svg>
                 </span>
 
+                {/* Name / InlineRename */}
                 {renamingId === node.id ? (
                     <InlineRename
                         initialValue={node.name}
-                        className={`flex-1 ml-0.5 text-sm px-1 py-0 rounded border border-blue-400 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 outline-none ${
-                            isRoot ? "text-gray-800 dark:text-gray-200" : "text-gray-700 dark:text-gray-300"
-                        }`}
+                        className="flex-1 ml-0.5 text-sm px-1 py-0 rounded border border-blue-400 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 outline-none"
                         onCommit={(v) => onRenameCommit(node.id, v)}
                         onCancel={() => onRenameCancel(node.id)}
                     />
                 ) : (
-                    <span
-                        className={`flex-1 text-sm truncate ml-0.5 ${
-                            isRoot
-                                ? "text-gray-800 dark:text-gray-200"
-                                : "text-gray-700 dark:text-gray-300"
-                        }`}
-                    >
+                    <span className={`flex-1 text-sm truncate ml-0.5 ${
+                        isRoot ? "text-gray-800 dark:text-gray-200" : "text-gray-700 dark:text-gray-300"
+                    }`}>
                         {node.name}
                     </span>
                 )}
 
+                {/* Loading spinner */}
                 {loading && (
                     <svg className="flex-shrink-0 w-3.5 h-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
@@ -522,10 +473,7 @@ function FsDirBody({
 
                 {/* Hover actions */}
                 {renamingId !== node.id && (
-                    <div
-                        className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                         <IconAction title="New Document" onClick={() => onCreate("document")}>
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                             <polyline points="14 2 14 8 20 8" />
@@ -546,13 +494,8 @@ function FsDirBody({
                             </IconAction>
                         )}
                         {isRoot && onRemoveWorkspaceRoot && (
-                            <IconAction
-                                title="Remove root from sidebar (does not delete folder)"
-                                danger
-                                onClick={async () => {
-                                    await onRemoveWorkspaceRoot(node.id);
-                                    onRootsChanged?.();
-                                }}
+                            <IconAction title="Remove root from sidebar" danger
+                                onClick={async () => { await onRemoveWorkspaceRoot(node.id); onRootsChanged?.(); }}
                             >
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -562,32 +505,18 @@ function FsDirBody({
                 )}
             </div>
 
-            {/* Inline delete confirm */}
+            {/* Delete confirm */}
             {confirmDelete && (
-                <div
-                    style={indent ? { paddingLeft: indent } : { paddingLeft: 12 }}
-                    className="pr-2 py-1 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800"
-                >
-                    <p className="text-xs text-red-700 dark:text-red-300 mb-1">
-                        Delete "{node.name}" and all of its contents? This cannot be undone.
-                    </p>
-                    <div className="flex gap-1.5">
-                        <button
-                            onClick={handleDelete}
-                            className="px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                        >
-                            Delete
-                        </button>
-                        <button
-                            onClick={() => setConfirmDelete(false)}
-                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
-                        >
-                            Cancel
-                        </button>
-                    </div>
-                </div>
+                <DeleteConfirm
+                    entryName={node.name}
+                    isFolder
+                    indent={indent}
+                    onConfirm={handleDelete}
+                    onCancel={() => setConfirmDelete(false)}
+                />
             )}
 
+            {/* Children */}
             {expanded && children !== null && (
                 <div>
                     {children.map((child) =>
@@ -614,7 +543,7 @@ function FsDirBody({
                         ),
                     )}
                     {children.length === 0 && (
-                        <div className="py-1 text-xs text-gray-400 dark:text-gray-600 italic" style={{ paddingLeft: (indent ?? 12) + 20 }}>
+                        <div className="py-1 text-xs text-gray-400 dark:text-gray-600 italic" style={{ paddingLeft: indent + 20 }}>
                             Empty
                         </div>
                     )}
@@ -624,13 +553,7 @@ function FsDirBody({
     );
 }
 
-// ── Document row with TOC ─────────────────────────────────────────────────────
-
-interface Heading {
-    id: string;
-    text: string;
-    level: number;
-}
+// ── Document row ──────────────────────────────────────────────────────────────
 
 function FsDocumentRow({
     doc,
@@ -653,16 +576,15 @@ function FsDocumentRow({
 }) {
     const { dragState, refreshPath, selectedDocId, onDocumentSelect } = useTreeContext();
     const [tocExpanded, setTocExpanded] = useState(false);
-    const [docHeadings, setDocHeadings] = useState<Heading[] | null>(null);
+    const [docHeadings, setDocHeadings] = useState<import("../utils/headings").Heading[] | null>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const indent = 28 + depth * 16;
-    const isSelected = selectedDocId === doc.id;
 
     const loadHeadings = async () => {
         if (docHeadings !== null) return;
         try {
             const entry = await api.getEntry(doc.id);
-            if (entry && entry.content) {
+            if (entry?.content) {
                 setDocHeadings(parseHeadings(entry.content));
             } else {
                 setDocHeadings([]);
@@ -674,10 +596,7 @@ function FsDocumentRow({
 
     const handleToggleToc = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (tocExpanded) {
-            setTocExpanded(false);
-            return;
-        }
+        if (tocExpanded) { setTocExpanded(false); return; }
         setTocExpanded(true);
         loadHeadings();
     };
@@ -702,51 +621,37 @@ function FsDocumentRow({
                 onDragStart={(e) => {
                     dragState.current = doc.id;
                     e.dataTransfer.effectAllowed = "move";
-                    try {
-                        e.dataTransfer.setData("text/plain", doc.id);
-                    } catch {
-                        /* some environments disallow setData */
-                    }
+                    try { e.dataTransfer.setData("text/plain", doc.id); } catch { /* ignore */ }
                 }}
-                onDragEnd={() => {
-                    dragState.current = null;
-                }}
+                onDragEnd={() => { dragState.current = null; }}
                 className={`group flex items-center gap-1.5 cursor-pointer select-none py-0.5 pr-1 hover:bg-gray-200 dark:hover:bg-gray-700 ${
-                    isSelected ? "bg-blue-100 dark:bg-blue-900/30" : ""
+                    selectedDocId === doc.id ? "bg-blue-100 dark:bg-blue-900/30" : ""
                 } ${mcpAnimatingIds?.has(doc.id) ? "mcp-animate-pulse" : ""}`}
                 style={{ paddingLeft: indent }}
                 onClick={() => {
-                    api.getEntry(doc.id).then((entry) => {
-                        if (entry) onDocumentSelect(entry);
-                    });
+                    api.getEntry(doc.id).then((entry) => entry && onDocumentSelect(entry));
                 }}
-                onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    onRenameStart();
-                }}
+                onDoubleClick={(e) => { e.stopPropagation(); onRenameStart(); }}
             >
-                {/* TOC toggle chevron */}
+                {/* TOC chevron */}
                 <button
                     className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 rounded"
                     onClick={handleToggleToc}
                     title="Toggle table of contents"
                 >
-                    <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        className={`transition-transform duration-100 ${tocExpanded ? "" : "-rotate-90"}`}
-                    >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"
+                        className={`transition-transform duration-100 ${tocExpanded ? "" : "-rotate-90"}`}>
                         <path d="M7 10l5 5 5-5z" />
                     </svg>
                 </button>
 
+                {/* File icon */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-400 flex-shrink-0">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                 </svg>
 
+                {/* Name / InlineRename */}
                 {renaming ? (
                     <InlineRename
                         initialValue={doc.name}
@@ -760,12 +665,9 @@ function FsDocumentRow({
                     </span>
                 )}
 
-                {/* Hover actions */}
+                {/* Hover delete */}
                 {!renaming && (
-                    <div
-                        className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                         <IconAction title="Delete" danger onClick={() => setConfirmDelete(true)}>
                             <polyline points="3 6 5 6 21 6" />
                             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
@@ -776,186 +678,39 @@ function FsDocumentRow({
                 )}
             </div>
 
-            {/* TOC section */}
+            {/* TOC */}
             {tocExpanded && (
                 <div style={{ marginLeft: indent + 16 }}>
                     {docHeadings === null ? (
-                        <div className="py-1 text-xs text-gray-400 dark:text-gray-500 italic">
-                            Loading...
-                        </div>
+                        <div className="py-1 text-xs text-gray-400 dark:text-gray-500 italic">Loading...</div>
                     ) : docHeadings.length === 0 ? (
-                        <div className="py-1 text-xs text-gray-400 dark:text-gray-500 italic">
-                            No headings
-                        </div>
+                        <div className="py-1 text-xs text-gray-400 dark:text-gray-500 italic">No headings</div>
                     ) : (
                         docHeadings.map((h) => (
-                            <div
-                                key={h.id}
+                            <div key={h.id}
                                 className="group flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded"
                                 style={{ paddingLeft: (h.level - 1) * 12 }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onHeadingClick?.(doc.id, h.id);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); onHeadingClick?.(doc.id, h.id); }}
                             >
                                 <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">#</span>
-                                <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                                    {h.text}
-                                </span>
-                                <span className="hidden group-hover:inline text-[10px] text-blue-400 flex-shrink-0 ml-auto">
-                                    →
-                                </span>
+                                <span className="text-xs text-gray-600 dark:text-gray-400 truncate">{h.text}</span>
+                                <span className="hidden group-hover:inline text-[10px] text-blue-400 flex-shrink-0 ml-auto">→</span>
                             </div>
                         ))
                     )}
                 </div>
             )}
 
-            {/* Inline delete confirm */}
+            {/* Delete confirm */}
             {confirmDelete && (
-                <div
-                    style={{ paddingLeft: indent }}
-                    className="pr-2 py-1 bg-red-50 dark:bg-red-900/20 border-t border-b border-red-200 dark:border-red-800"
-                >
-                    <p className="text-xs text-red-700 dark:text-red-300 mb-1">
-                        Delete "{doc.name}"? This cannot be undone.
-                    </p>
-                    <div className="flex gap-1.5">
-                        <button
-                            onClick={handleDelete}
-                            className="px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                        >
-                            Delete
-                        </button>
-                        <button
-                            onClick={() => setConfirmDelete(false)}
-                            className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
-                        >
-                            Cancel
-                        </button>
-                    </div>
-                </div>
+                <DeleteConfirm
+                    entryName={doc.name}
+                    isFolder={false}
+                    indent={indent}
+                    onConfirm={handleDelete}
+                    onCancel={() => setConfirmDelete(false)}
+                />
             )}
         </div>
     );
-}
-
-// ── Inline rename input ───────────────────────────────────────────────────────
-
-function InlineRename({
-    initialValue,
-    onCommit,
-    onCancel,
-    className,
-}: {
-    initialValue: string;
-    onCommit: (value: string) => void;
-    onCancel: () => void;
-    className?: string;
-}) {
-    const [value, setValue] = useState(initialValue);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const committedRef = useRef(false);
-
-    useEffect(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-    }, []);
-
-    const commit = () => {
-        if (committedRef.current) return;
-        committedRef.current = true;
-        onCommit(value.trim() || initialValue);
-    };
-
-    return (
-        <input
-            ref={inputRef}
-            type="text"
-            className={className}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                    e.preventDefault();
-                    commit();
-                } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    if (committedRef.current) return;
-                    committedRef.current = true;
-                    onCancel();
-                }
-            }}
-            onBlur={commit}
-        />
-    );
-}
-
-// ── Hover icon button ─────────────────────────────────────────────────────────
-
-function IconAction({
-    title,
-    onClick,
-    danger,
-    children,
-}: {
-    title: string;
-    onClick: () => void;
-    danger?: boolean;
-    children: React.ReactNode;
-}) {
-    return (
-        <button
-            title={title}
-            onClick={onClick}
-            className={`p-0.5 rounded transition-colors ${
-                danger
-                    ? "text-gray-400 dark:text-gray-500 hover:bg-gray-300 dark:hover:bg-gray-600 hover:text-red-500 dark:hover:text-red-400"
-                    : "text-gray-400 dark:text-gray-500 hover:bg-gray-300 dark:hover:bg-gray-600 hover:text-blue-500 dark:hover:text-blue-400"
-            }`}
-        >
-            <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            >
-                {children}
-            </svg>
-        </button>
-    );
-}
-
-// ── Heading parser (deduplicating) ────────────────────────────────────────────
-
-function parseHeadings(markdown: string): Heading[] {
-    const counts = new Map<string, number>();
-    const headings: Heading[] = [];
-    for (const line of markdown.split("\n")) {
-        const match = line.match(/^(#{1,6})\s+(.+)/);
-        if (!match) continue;
-        const level = match[1].length;
-        const text = match[2].trim();
-        let id = slugify(text);
-        const count = counts.get(id) ?? 0;
-        counts.set(id, count + 1);
-        if (count > 0) id = `${id}-${count}`;
-        headings.push({ id, text, level });
-    }
-    return headings;
-}
-
-// ── Path helpers ──────────────────────────────────────────────────────────────
-
-function getParentPath(path: string): string | null {
-    const normalized = path.replace(/\\/g, "/");
-    const idx = normalized.lastIndexOf("/");
-    if (idx <= 0) return null;
-    return normalized.slice(0, idx);
 }
