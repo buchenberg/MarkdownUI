@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::config::StorageConfig;
-use crate::storage::{StorageBackend, TreeNode, TreeNodeKind};
+use crate::storage::{TreeNode, TreeNodeKind};
 
 pub struct FilesystemStorage {
     config: Arc<RwLock<StorageConfig>>,
@@ -28,23 +28,9 @@ impl FilesystemStorage {
             .unwrap_or_default()
     }
 
-    fn workspace_root(&self, index: usize) -> Option<(String, PathBuf)> {
-        let ws = self.workspaces();
-        ws.get(index).cloned()
-    }
-
+    /// IDs are now always absolute paths; resolution is trivial.
     fn resolve_path(&self, id: &str) -> Result<PathBuf, String> {
-        if let Some(stripped) = id.strip_prefix("fs:") {
-            let index: usize = stripped
-                .parse()
-                .map_err(|_| format!("Invalid workspace root ID: {}", id))?;
-            let (_name, path) = self
-                .workspace_root(index)
-                .ok_or_else(|| format!("Workspace root not found: {}", id))?;
-            Ok(path)
-        } else {
-            Ok(PathBuf::from(id))
-        }
+        Ok(PathBuf::from(id))
     }
 
     fn is_hidden(entry: &fs::DirEntry) -> bool {
@@ -123,34 +109,33 @@ impl FilesystemStorage {
             Ok(None)
         }
     }
-}
 
-// ── StorageBackend implementation ────────────────────────────────────────────
-
-impl StorageBackend for FilesystemStorage {
-    fn list_roots(&self) -> Result<Vec<TreeNode>, String> {
-        self.workspaces()
-            .into_iter()
-            .enumerate()
-            .map(|(i, (name, path))| {
-                let (created_at, updated_at) = match fs::metadata(&path) {
-                    Ok(meta) => Self::metadata_to_timestamps(&meta),
-                    Err(_) => (String::new(), String::new()),
-                };
-                Ok(TreeNode {
-                    id: format!("fs:{}", i),
-                    parent_id: None,
-                    name,
-                    kind: TreeNodeKind::Folder,
-                    content: None,
-                    created_at,
-                    updated_at,
-                })
-            })
-            .collect()
+    /// Build a root TreeNode (parent_id = None) from a path + name, with best-effort timestamps.
+    fn root_node(name: &str, path: &Path) -> TreeNode {
+        let (created_at, updated_at) = match fs::metadata(path) {
+            Ok(meta) => Self::metadata_to_timestamps(&meta),
+            Err(_) => (String::new(), String::new()),
+        };
+        TreeNode {
+            id: path.to_string_lossy().to_string(),
+            parent_id: None,
+            name: name.to_string(),
+            kind: TreeNodeKind::Folder,
+            content: None,
+            created_at,
+            updated_at,
+        }
     }
 
-    fn add_root(&self, name: &str, extra: Option<&str>) -> Result<TreeNode, String> {
+    pub fn list_roots(&self) -> Result<Vec<TreeNode>, String> {
+        Ok(self
+            .workspaces()
+            .into_iter()
+            .map(|(name, path)| Self::root_node(&name, &path))
+            .collect())
+    }
+
+    pub fn add_root(&self, name: &str, extra: Option<&str>) -> Result<TreeNode, String> {
         let path = match extra {
             Some(p) if !p.is_empty() => PathBuf::from(p),
             _ => {
@@ -164,65 +149,27 @@ impl StorageBackend for FilesystemStorage {
             return Err(format!("Path is not a directory: {}", path.display()));
         }
 
-        let mut cfg = self.config.write().map_err(|e| e.to_string())?;
-        cfg.add_workspace(name, path.clone());
-        cfg.save(&self.config_dir)?;
+        {
+            let mut cfg = self.config.write().map_err(|e| e.to_string())?;
+            cfg.add_workspace(name, path.clone());
+            cfg.save(&self.config_dir)?;
+        }
 
-        let index = cfg.workspaces.len() - 1;
-        let (created_at, updated_at) = match fs::metadata(&path) {
-            Ok(meta) => Self::metadata_to_timestamps(&meta),
-            Err(_) => (String::new(), String::new()),
-        };
-
-        Ok(TreeNode {
-            id: format!("fs:{}", index),
-            parent_id: None,
-            name: name.to_string(),
-            kind: TreeNodeKind::Folder,
-            content: None,
-            created_at,
-            updated_at,
-        })
+        Ok(Self::root_node(name, &path))
     }
 
-    fn remove_root(&self, id: &str) -> Result<bool, String> {
-        let index = id
-            .strip_prefix("fs:")
-            .and_then(|s| s.parse::<usize>().ok())
-            .ok_or_else(|| format!("Invalid workspace root ID: {}", id))?;
+    pub fn remove_root(&self, id: &str) -> Result<bool, String> {
+        let path = PathBuf::from(id);
 
         let mut cfg = self.config.write().map_err(|e| e.to_string())?;
-        if !cfg.remove_workspace(index) {
+        if !cfg.remove_workspace_by_path(&path) {
             return Err(format!("Workspace root not found: {}", id));
         }
         cfg.save(&self.config_dir)?;
         Ok(true)
     }
 
-    fn get_entry(&self, id: &str) -> Result<Option<TreeNode>, String> {
-        if id.starts_with("fs:") {
-            let index = id
-                .strip_prefix("fs:")
-                .and_then(|s| s.parse::<usize>().ok())
-                .ok_or_else(|| format!("Invalid workspace root ID: {}", id))?;
-            let ws = self
-                .workspace_root(index)
-                .ok_or_else(|| format!("Workspace root not found: {}", id))?;
-            let (created_at, updated_at) = match fs::metadata(&ws.1) {
-                Ok(meta) => Self::metadata_to_timestamps(&meta),
-                Err(_) => (String::new(), String::new()),
-            };
-            return Ok(Some(TreeNode {
-                id: id.to_string(),
-                parent_id: None,
-                name: ws.0,
-                kind: TreeNodeKind::Folder,
-                content: None,
-                created_at,
-                updated_at,
-            }));
-        }
-
+    pub fn get_entry(&self, id: &str) -> Result<Option<TreeNode>, String> {
         let path = PathBuf::from(id);
         let meta = match fs::metadata(&path) {
             Ok(m) => m,
@@ -237,6 +184,13 @@ impl StorageBackend for FilesystemStorage {
             .parent()
             .map(|p| p.to_string_lossy().to_string());
         let (created_at, updated_at) = Self::metadata_to_timestamps(&meta);
+
+        // A registered root directory has no parent in the tree.
+        let parent_id = if self.is_registered_root(&path) {
+            None
+        } else {
+            parent_id
+        };
 
         if meta.is_dir() {
             Ok(Some(TreeNode {
@@ -268,7 +222,14 @@ impl StorageBackend for FilesystemStorage {
         }
     }
 
-    fn list_children(&self, parent_id: &str) -> Result<Vec<TreeNode>, String> {
+    /// True if `path` matches a registered workspace root (used to clear parent_id for roots).
+    fn is_registered_root(&self, path: &Path) -> bool {
+        self.workspaces()
+            .iter()
+            .any(|(_, p)| p.as_path().eq(path))
+    }
+
+    pub fn list_children(&self, parent_id: &str) -> Result<Vec<TreeNode>, String> {
         let dir_path = self.resolve_path(parent_id)?;
 
         if !dir_path.is_dir() {
@@ -299,7 +260,7 @@ impl StorageBackend for FilesystemStorage {
         Ok(children)
     }
 
-    fn create_folder(&self, parent_id: &str, name: &str) -> Result<TreeNode, String> {
+    pub fn create_folder(&self, parent_id: &str, name: &str) -> Result<TreeNode, String> {
         let parent_path = self.resolve_path(parent_id)?;
         let new_path = parent_path.join(name);
 
@@ -321,7 +282,7 @@ impl StorageBackend for FilesystemStorage {
         })
     }
 
-    fn create_document(
+    pub fn create_document(
         &self,
         parent_id: &str,
         name: &str,
@@ -357,7 +318,7 @@ impl StorageBackend for FilesystemStorage {
         })
     }
 
-    fn update_document(
+    pub fn update_document(
         &self,
         id: &str,
         name: &str,
@@ -412,7 +373,7 @@ impl StorageBackend for FilesystemStorage {
         })
     }
 
-    fn rename_entry(&self, id: &str, new_name: &str) -> Result<TreeNode, String> {
+    pub fn rename_entry(&self, id: &str, new_name: &str) -> Result<TreeNode, String> {
         let old_path = PathBuf::from(id);
 
         let (_is_dir, is_file) = if let Ok(meta) = fs::metadata(&old_path) {
@@ -466,7 +427,7 @@ impl StorageBackend for FilesystemStorage {
         })
     }
 
-    fn delete_entry(&self, id: &str) -> Result<bool, String> {
+    pub fn delete_entry(&self, id: &str) -> Result<bool, String> {
         let path = PathBuf::from(id);
 
         let meta = match fs::metadata(&path) {
@@ -485,7 +446,9 @@ impl StorageBackend for FilesystemStorage {
         Ok(true)
     }
 
-    fn move_entry(&self, id: &str, new_parent_id: &str) -> Result<TreeNode, String> {
+    /// Move an entry to a new parent directory. Uses `fs::rename`, which only works
+    /// within the same volume/filesystem. Cross-volume moves will surface the OS error.
+    pub fn move_entry(&self, id: &str, new_parent_id: &str) -> Result<TreeNode, String> {
         let old_path = PathBuf::from(id);
 
         let is_dir = fs::metadata(&old_path)
@@ -537,27 +500,19 @@ impl StorageBackend for FilesystemStorage {
         })
     }
 
-    fn search(&self, query: &str) -> Result<Vec<TreeNode>, String> {
+    pub fn search(&self, query: &str) -> Result<Vec<TreeNode>, String> {
         let lower_query = query.to_lowercase();
         let mut results: Vec<TreeNode> = Vec::new();
 
-        for (root_idx, (_name, root_path)) in self.workspaces().into_iter().enumerate() {
+        for (_name, root_path) in self.workspaces().into_iter() {
             if !root_path.is_dir() {
                 continue;
             }
-            let root_id = format!("fs:{}", root_idx);
+            let root_id = root_path.to_string_lossy().to_string();
             walk_for_search(&root_path, &root_id, &lower_query, &mut results)?;
         }
 
         Ok(results)
-    }
-
-    fn export_root_to_filesystem(
-        &self,
-        _root_id: &str,
-        _target_path: &Path,
-    ) -> Result<(), String> {
-        Err("Export not applicable — filesystem storage already uses the filesystem".into())
     }
 }
 

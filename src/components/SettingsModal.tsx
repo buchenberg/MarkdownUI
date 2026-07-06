@@ -11,9 +11,6 @@ interface SettingsModalProps {
     mcpRunning: boolean;
     mcpPending: boolean;
     onMcpToggle: () => Promise<void>;
-    storageType: 'sqlite' | 'filesystem';
-    storagePending: boolean;
-    onStorageTypeChange: (type: 'sqlite' | 'filesystem') => Promise<void>;
     workspaceRoots: TreeNode[];
     onAddWorkspaceRoot: () => Promise<void>;
     onRemoveWorkspaceRoot: (id: string) => Promise<void>;
@@ -102,9 +99,6 @@ export default function SettingsModal({
     mcpRunning,
     mcpPending,
     onMcpToggle,
-    storageType,
-    storagePending,
-    onStorageTypeChange,
     workspaceRoots,
     onAddWorkspaceRoot,
     onRemoveWorkspaceRoot,
@@ -255,90 +249,52 @@ export default function SettingsModal({
                                 </h2>
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                                        Storage Type
+                                        Root Folders
                                     </h3>
                                     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
-                                        <SettingsRow label="Backend" icon={
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                            </svg>
-                                        }>
-                                            <SegmentedToggle
-                                                options={[
-                                                    { value: 'sqlite', label: 'SQLite' },
-                                                    { value: 'filesystem', label: 'Filesystem' },
-                                                ]}
-                                                value={storageType}
-                                                onChange={async (newType: string) => {
-                                                    if (newType === storageType) return;
-                                                    const confirmed = confirm(
-                                                        `Switch storage to ${newType}?\n\nThis requires restarting the application. Unsaved changes will be lost.`,
-                                                    );
-                                                    if (confirmed) {
-                                                        await onStorageTypeChange(newType as 'sqlite' | 'filesystem');
-                                                    }
-                                                }}
-                                            />
-                                        </SettingsRow>
-                                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
-                                            {storageType === 'sqlite'
-                                                ? 'Documents are stored in a SQLite database in the app data directory.'
-                                                : 'Documents are browsed and edited directly on the filesystem.'}
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                                            MarkdownUI browses and edits files directly on the
+                                            filesystem. Add a folder here to browse it in the sidebar.
                                         </p>
-                                        {storagePending && (
-                                            <p className="text-xs text-yellow-500 mt-1">Saving...</p>
+                                        {workspaceRoots.length === 0 && (
+                                            <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                                                No workspace roots configured. Add a folder to browse.
+                                            </p>
                                         )}
-                                    </div>
-
-                                    {storageType === 'filesystem' && (
-                                        <>
-                                            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-4">
-                                                Workspace Roots
-                                            </h3>
-                                            <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
-                                                {workspaceRoots.length === 0 && (
-                                                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
-                                                        No workspace roots configured. Add a folder to browse.
-                                                    </p>
-                                                )}
-                                                <div className="space-y-1.5 mb-2">
-                                                    {workspaceRoots.map((root) => (
-                                                        <div
-                                                            key={root.id}
-                                                            className="flex items-center justify-between gap-2 text-xs"
-                                                        >
-                                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-yellow-500 flex-shrink-0">
-                                                                    <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
-                                                                </svg>
-                                                                <span className="truncate text-gray-700 dark:text-gray-300">
-                                                                    {root.name}
-                                                                </span>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => onRemoveWorkspaceRoot(root.id)}
-                                                                className="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors flex-shrink-0"
-                                                                title="Remove root"
-                                                            >
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <button
-                                                    onClick={onAddWorkspaceRoot}
-                                                    className="w-full px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                        <div className="space-y-1.5 mb-2">
+                                            {workspaceRoots.map((root) => (
+                                                <div
+                                                    key={root.id}
+                                                    className="flex items-center justify-between gap-2 text-xs"
                                                 >
-                                                    + Add Root Folder
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-yellow-500 flex-shrink-0">
+                                                            <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
+                                                        </svg>
+                                                        <span className="truncate text-gray-700 dark:text-gray-300" title={root.id}>
+                                                            {root.name}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onRemoveWorkspaceRoot(root.id)}
+                                                        className="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors flex-shrink-0"
+                                                        title="Remove root"
+                                                    >
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                            <line x1="18" y1="6" x2="6" y2="18" />
+                                                            <line x1="6" y1="6" x2="18" y2="18" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button
+                                            onClick={onAddWorkspaceRoot}
+                                            className="w-full px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                        >
+                                            + Add Root Folder
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}

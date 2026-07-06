@@ -14,7 +14,6 @@ tauri-build = { version = "1.5", features = [] }
 tauri = { version = "1.5", features = [ "dialog-open", "dialog-message", "dialog-confirm", "dialog-ask", "fs-create-dir", "fs-remove-dir", "fs-read-file", "fs-remove-file", "fs-write-file", "fs-read-dir", "fs-exists", "shell-open", "dialog-save", "path-all"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rusqlite = { version = "0.31", features = ["bundled"] }
 shiva = { version = "1.4.9", features = ["markdown", "html"] }
 carbonpdf = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "macros"] }

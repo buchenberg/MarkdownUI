@@ -2,36 +2,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { save, open } from "@tauri-apps/api/dialog";
 import { writeTextFile } from "@tauri-apps/api/fs";
 
-// ── Legacy types (SQLite backend) ────────────────────────────────────────────
-
-export interface Collection {
-    id: number;
-    name: string;
-    description: string | null;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface Folder {
-    id: number;
-    collection_id: number;
-    parent_folder_id: number | null;
-    name: string;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface Document {
-    id: number;
-    collection_id: number;
-    folder_id: number | null;
-    name: string;
-    content: string;
-    created_at: string;
-    updated_at: string;
-}
-
-// ── Unified types (StorageBackend trait) ─────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export interface TreeNode {
     id: string;
@@ -45,17 +16,7 @@ export interface TreeNode {
 
 export type ExportFormat = "html" | "pdf";
 
-// ── Storage config ──────────────────────────────────────────────────────────
-
-export async function getStorageType(): Promise<"sqlite" | "filesystem"> {
-    return invoke<string>("get_storage_type") as Promise<"sqlite" | "filesystem">;
-}
-
-export async function setStorageType(type: "sqlite" | "filesystem"): Promise<void> {
-    return invoke<void>("set_storage_type", { storageType: type });
-}
-
-// ── Unified API (StorageBackend-based) ──────────────────────────────────────
+// ── Filesystem storage API ───────────────────────────────────────────────────
 
 export async function listRoots(): Promise<TreeNode[]> {
     return invoke<TreeNode[]>("storage_list_roots");
@@ -116,12 +77,7 @@ export async function searchEntries(query: string): Promise<TreeNode[]> {
     return invoke<TreeNode[]>("storage_search", { query });
 }
 
-export async function exportRootToFilesystem(
-    rootId: string,
-    targetPath: string,
-): Promise<void> {
-    return invoke<void>("storage_export_root", { rootId, targetPath });
-}
+// ── Export ───────────────────────────────────────────────────────────────────
 
 export async function exportDocToFile(
     id: string,
@@ -130,115 +86,6 @@ export async function exportDocToFile(
 ): Promise<void> {
     return invoke<void>("storage_export_document", { id, format, outputPath });
 }
-
-// ── Legacy API (SQLite backend — kept for backward compat) ───────────────────
-
-export async function getCollections(): Promise<Collection[]> {
-    return invoke<Collection[]>("get_collections");
-}
-
-export async function getCollection(id: number): Promise<Collection | null> {
-    return invoke<Collection | null>("get_collection", { id });
-}
-
-export async function createCollection(
-    name: string,
-    description?: string,
-): Promise<Collection> {
-    return invoke<Collection>("create_collection", {
-        name,
-        description: description || null,
-    });
-}
-
-export async function updateCollection(
-    id: number,
-    name: string,
-    description?: string,
-): Promise<Collection> {
-    return invoke<Collection>("update_collection", {
-        id,
-        name,
-        description: description || null,
-    });
-}
-
-export async function deleteCollection(id: number): Promise<boolean> {
-    return invoke<boolean>("delete_collection", { id });
-}
-
-export async function getDocumentsByCollection(
-    collectionId: number,
-): Promise<Document[]> {
-    return invoke<Document[]>("get_documents_by_collection", { collectionId });
-}
-
-export async function getDocument(id: number): Promise<Document | null> {
-    return invoke<Document | null>("get_document", { id });
-}
-
-export async function createDocument(
-    collectionId: number,
-    folderId: number | null,
-    name: string,
-    content: string,
-): Promise<Document> {
-    return invoke<Document>("create_document", { collectionId, folderId, name, content });
-}
-
-export async function updateDocument(
-    id: number,
-    name: string,
-    content: string,
-): Promise<Document> {
-    return invoke<Document>("update_document", { id, name, content });
-}
-
-export async function deleteDocument(id: number): Promise<boolean> {
-    return invoke<boolean>("delete_document", { id });
-}
-
-export async function createFolder(
-    collectionId: number,
-    parentFolderId: number | null,
-    name: string,
-): Promise<Folder> {
-    return invoke<Folder>("create_folder", { collectionId, parentFolderId, name });
-}
-
-export async function getFoldersByCollection(collectionId: number): Promise<Folder[]> {
-    return invoke<Folder[]>("get_folders_by_collection", { collectionId });
-}
-
-export async function updateFolder(id: number, name: string): Promise<Folder> {
-    return invoke<Folder>("update_folder", { id, name });
-}
-
-export async function deleteFolder(id: number): Promise<boolean> {
-    return invoke<boolean>("delete_folder", { id });
-}
-
-export async function getDocumentsByFolder(folderId: number): Promise<Document[]> {
-    return invoke<Document[]>("get_documents_by_folder", { folderId });
-}
-
-export async function moveDocument(id: number, folderId: number | null): Promise<Document> {
-    return invoke<Document>("move_document", { id, folderId });
-}
-
-export async function getFolder(id: number): Promise<Folder | null> {
-    return invoke<Folder | null>("get_folder", { id });
-}
-
-export async function moveFolder(id: number, parentFolderId: number | null): Promise<Folder> {
-    return invoke<Folder>("move_folder", { id, parentFolderId });
-}
-
-export async function listFolderContents(folderId: number): Promise<{ folders: Folder[]; documents: Document[] }> {
-    return invoke<{ folders: Folder[]; documents: Document[] }>("list_folder_contents", { folderId });
-}
-
-// ── Markdown Export ──────────────────────────────────────────────────────────
 
 export async function exportMarkdown(
     markdownContent: string,
@@ -251,32 +98,6 @@ export async function exportMarkdown(
         });
         if (!filePath) return false;
         await writeTextFile(filePath, markdownContent);
-        return true;
-    } catch (error) {
-        console.error("Export failed:", error);
-        throw error;
-    }
-}
-
-// ── Document Export (legacy) ─────────────────────────────────────────────────
-
-export async function exportDocument(
-    documentId: number,
-    format: ExportFormat,
-    defaultName: string,
-): Promise<boolean> {
-    try {
-        const formatInfo: Record<ExportFormat, { ext: string; name: string }> = {
-            html: { ext: "html", name: "HTML Files" },
-            pdf: { ext: "pdf", name: "PDF Files" },
-        };
-        const { ext, name: filterName } = formatInfo[format];
-        const filePath = await save({
-            defaultPath: `${defaultName}.${ext}`,
-            filters: [{ name: filterName, extensions: [ext] }],
-        });
-        if (!filePath) return false;
-        await invoke("export_document", { documentId, format, outputPath: filePath });
         return true;
     } catch (error) {
         console.error("Export failed:", error);
