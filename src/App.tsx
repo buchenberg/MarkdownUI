@@ -83,8 +83,9 @@ function AppContent() {
                 return;
             }
 
-            // Constrain width to ensure content remains visible (min 300px)
-            setSidebarWidth(Math.max(300, Math.min(500, newWidth)));
+            // Constrain width to ensure content remains visible (min 300px, max 50% of container)
+            const maxWidth = containerRect.width * 0.5;
+            setSidebarWidth(Math.max(300, Math.min(maxWidth, newWidth)));
         };
 
         const handleMouseUp = () => {
