@@ -168,26 +168,42 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
 
         // Memoize ReactMarkdown component overrides so renderers aren't redefined each render
         const markdownComponents = useMemo(() => ({
+            // Inline code only. Block code (fenced/indented) is rendered by `pre`
+            // below — react-markdown wraps every code block in <pre>, never inline,
+            // so `pre` is the reliable place to distinguish block vs inline.
             code({ node, className, children, ...props }: any) {
-                const match = /language-(\w+)/.exec(className || "");
-                const language = match ? match[1] : "";
-                const codeString = String(children).replace(/\n$/, "");
+                return <code className={className} {...props}>{children}</code>;
+            },
+            h1: HeadingRenderer,
+            h2: HeadingRenderer,
+            h3: HeadingRenderer,
+            h4: HeadingRenderer,
+            h5: HeadingRenderer,
+            h6: HeadingRenderer,
+            // Fenced/indented code blocks. Unqualified fences (no language) render
+            // as a plain "text" block via the syntax highlighter.
+            pre({ children }: any) {
+                const child = Array.isArray(children) ? children[0] : children;
+                const className: string = child?.props?.className || "";
+                const match = /language-(\w+)/.exec(className);
+                const language = match ? match[1] : "text";
+                const rawChildren = child?.props?.children;
+                const codeString = (Array.isArray(rawChildren)
+                    ? rawChildren.join("")
+                    : String(rawChildren ?? "")
+                )
+                    .replace(/^\n/, "")
+                    .replace(/\n$/, "");
 
                 // Handle mermaid code blocks
                 if (language === "mermaid") {
                     return <MermaidDiagram code={codeString} theme={theme} />;
                 }
 
-                // Inline code
-                if (!className) {
-                    return <code {...props}>{children}</code>;
-                }
-
-                // Code blocks with syntax highlighting
                 return (
                     <SyntaxHighlighter
                         style={theme === 'dark' ? oneDark : oneLight}
-                        language={language || 'text'}
+                        language={language}
                         PreTag="div"
                         customStyle={{
                             margin: '1em 0',
@@ -199,13 +215,6 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                     </SyntaxHighlighter>
                 );
             },
-            h1: HeadingRenderer,
-            h2: HeadingRenderer,
-            h3: HeadingRenderer,
-            h4: HeadingRenderer,
-            h5: HeadingRenderer,
-            h6: HeadingRenderer,
-            pre: ({ children }: any) => <>{children}</>,
         }), [theme]);
 
         // Mouse event handlers for drag scrolling
