@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useCallback, forwardRef, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, forwardRef, useMemo, createContext, useContext } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import mermaid from "mermaid";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
@@ -16,6 +17,59 @@ interface DocumentPreviewProps {
     onNavigateToLine?: (line: number) => void;
     scrollToHeadingId?: string | null;
     onHeadingScrolled?: () => void;
+}
+
+// Context shares heading-slug data + callbacks with the hoisted HeadingRenderer,
+// avoiding the anti-pattern of defining a component inside the render body.
+interface HeadingContextValue {
+    headingSlugsByLine: Map<number, string>;
+    onNavigateToLine?: (line: number) => void;
+    theme: 'light' | 'dark';
+}
+const HeadingContext = createContext<HeadingContextValue | null>(null);
+
+// Sanitization schema: extends the safe GitHub-style default to allow `class`
+// attributes (used for legitimate markdown styling), while still stripping
+// <script>, event handlers (onclick, etc.), and javascript: URLs.
+const sanitizeSchema = {
+    ...defaultSchema,
+    attributes: {
+        ...defaultSchema.attributes,
+        '*': [...(defaultSchema.attributes?.['*'] ?? []), 'className'],
+    },
+};
+
+function HeadingRenderer({ children, node }: any) {
+    const ctx = useContext(HeadingContext);
+    if (!ctx) return null;
+    const line = node?.position?.start?.line;
+    const Tag = (node?.tagName as keyof JSX.IntrinsicElements) || 'h1';
+    const headingId = line ? ctx.headingSlugsByLine.get(line) : undefined;
+
+    return (
+        <Tag id={headingId} className="group relative flex items-center">
+            <span className="flex-1">{children}</span>
+            {line && ctx.onNavigateToLine && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        ctx.onNavigateToLine!(line);
+                    }}
+                    className={`opacity-0 group-hover:opacity-100 transition-opacity ml-2 p-1 rounded-md ${ctx.theme === 'dark'
+                        ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200'
+                        : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                        }`}
+                    title="Go to source"
+                    aria-label="Go to source"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                </button>
+            )}
+        </Tag>
+    );
 }
 
 // Mermaid code block component
@@ -34,7 +88,7 @@ function MermaidDiagram({ code, theme }: { code: string; theme: 'light' | 'dark'
                     securityLevel: "loose",
                 });
 
-                const id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
                 const { svg } = await mermaid.render(id, code);
 
                 if (containerRef.current) {
@@ -96,8 +150,8 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const { theme } = useTheme();
 
         // Convert :::mermaid blocks to ```mermaid for consistent processing
-        // Use a stateful approach to properly handle multiple :::mermaid blocks
-        const processedContent = content
+        // Memoized so it only recomputes when content changes (not on every render)
+        const processedContent = useMemo(() => content
             .split('\n')
             .map((line) => {
                 // Convert opening :::mermaid to ```mermaid
@@ -110,39 +164,58 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                 }
                 return line;
             })
-            .join('\n');
+            .join('\n'), [content]);
 
-        const HeadingRenderer = ({ children, node }: any) => {
-            // Access the line number from the node position
-            const line = node?.position?.start?.line;
-            const Tag = node?.tagName as keyof JSX.IntrinsicElements || 'h1'; // Default to h1 if undefined
-            const headingId = line ? headingSlugsByLine.get(line) : undefined;
+        // Memoize ReactMarkdown component overrides so renderers aren't redefined each render
+        const markdownComponents = useMemo(() => ({
+            // Inline code only. Block code (fenced/indented) is rendered by `pre`
+            // below — react-markdown wraps every code block in <pre>, never inline,
+            // so `pre` is the reliable place to distinguish block vs inline.
+            code({ node, className, children, ...props }: any) {
+                return <code className={className} {...props}>{children}</code>;
+            },
+            h1: HeadingRenderer,
+            h2: HeadingRenderer,
+            h3: HeadingRenderer,
+            h4: HeadingRenderer,
+            h5: HeadingRenderer,
+            h6: HeadingRenderer,
+            // Fenced/indented code blocks. Unqualified fences (no language) render
+            // as a plain "text" block via the syntax highlighter.
+            pre({ children }: any) {
+                const child = Array.isArray(children) ? children[0] : children;
+                const className: string = child?.props?.className || "";
+                const match = /language-(\w+)/.exec(className);
+                const language = match ? match[1] : "text";
+                const rawChildren = child?.props?.children;
+                const codeString = (Array.isArray(rawChildren)
+                    ? rawChildren.join("")
+                    : String(rawChildren ?? "")
+                )
+                    .replace(/^\n/, "")
+                    .replace(/\n$/, "");
 
-            return (
-                <Tag id={headingId} className="group relative flex items-center">
-                    <span className="flex-1">{children}</span>
-                    {line && onNavigateToLine && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onNavigateToLine(line);
-                            }}
-                            className={`opacity-0 group-hover:opacity-100 transition-opacity ml-2 p-1 rounded-md ${theme === 'dark'
-                                ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200'
-                                : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
-                                }`}
-                            title="Go to source"
-                            aria-label="Go to source"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                            </svg>
-                        </button>
-                    )}
-                </Tag>
-            );
-        };
+                // Handle mermaid code blocks
+                if (language === "mermaid") {
+                    return <MermaidDiagram code={codeString} theme={theme} />;
+                }
+
+                return (
+                    <SyntaxHighlighter
+                        style={theme === 'dark' ? oneDark : oneLight}
+                        language={language}
+                        PreTag="div"
+                        customStyle={{
+                            margin: '1em 0',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.875em',
+                        }}
+                    >
+                        {codeString}
+                    </SyntaxHighlighter>
+                );
+            },
+        }), [theme]);
 
         // Mouse event handlers for drag scrolling
         const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -166,7 +239,8 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             // Only show context menu if there is a selection
             if (selection && !selection.isCollapsed) {
                 e.preventDefault();
-                setContextMenu({ x: e.pageX, y: e.pageY });
+                // Use clientX/clientY since the menu uses position: fixed (viewport-relative)
+                setContextMenu({ x: e.clientX, y: e.clientY });
             }
         }, []);
 
@@ -339,7 +413,10 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                             ? 'bg-gray-800 border-gray-700 text-gray-200'
                             : 'bg-white border-gray-200 text-gray-700'
                             }`}
-                        style={{ left: contextMenu.x, top: contextMenu.y }}
+                        style={{
+                            left: Math.min(contextMenu.x, window.innerWidth - 180),
+                            top: Math.min(contextMenu.y, window.innerHeight - 100),
+                        }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <button
@@ -358,61 +435,24 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         </button>
                     </div>
                 )}
-                <div
-                    className="markdown-preview"
-                    style={{
-                        transform: `scale(${zoomLevel})`,
-                        transformOrigin: "0 0",
-                        transition: "transform 0.2s ease",
-                    }}
-                >
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                        components={{
-                            code({ node, className, children, ...props }) {
-                                const match = /language-(\w+)/.exec(className || "");
-                                const language = match ? match[1] : "";
-                                const codeString = String(children).replace(/\n$/, "");
-
-                                // Handle mermaid code blocks
-                                if (language === "mermaid") {
-                                    return <MermaidDiagram code={codeString} theme={theme} />;
-                                }
-
-                                // Inline code
-                                if (!className) {
-                                    return <code {...props}>{children}</code>;
-                                }
-
-                                // Code blocks with syntax highlighting
-                                return (
-                                    <SyntaxHighlighter
-                                        style={theme === 'dark' ? oneDark : oneLight}
-                                        language={language || 'text'}
-                                        PreTag="div"
-                                        customStyle={{
-                                            margin: '1em 0',
-                                            borderRadius: '0.375rem',
-                                            fontSize: '0.875em',
-                                        }}
-                                    >
-                                        {codeString}
-                                    </SyntaxHighlighter>
-                                );
-                            },
-                            h1: HeadingRenderer,
-                            h2: HeadingRenderer,
-                            h3: HeadingRenderer,
-                            h4: HeadingRenderer,
-                            h5: HeadingRenderer,
-                            h6: HeadingRenderer,
-                            pre: ({ children }) => <>{children}</>,
+                <HeadingContext.Provider value={{ headingSlugsByLine, onNavigateToLine, theme }}>
+                    <div
+                        className="markdown-preview"
+                        style={{
+                            transform: `scale(${zoomLevel})`,
+                            transformOrigin: "0 0",
+                            transition: "transform 0.2s ease",
                         }}
                     >
-                        {processedContent}
-                    </ReactMarkdown>
-                </div>
+                        <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+                            components={markdownComponents}
+                        >
+                            {processedContent}
+                        </ReactMarkdown>
+                    </div>
+                </HeadingContext.Provider>
             </div>
         );
     },

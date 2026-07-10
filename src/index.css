@@ -352,6 +352,19 @@ code {
 }
 
 /* =============================================
+   TOAST NOTIFICATIONS
+   ============================================= */
+
+@keyframes toast-in {
+    0%   { transform: translateX(120%); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+.toast-enter {
+    animation: toast-in 0.25s ease-out;
+}
+
+/* =============================================
    MCP LIVE UPDATE ANIMATIONS
    ============================================= */
 
