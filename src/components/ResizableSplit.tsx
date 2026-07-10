@@ -101,6 +101,7 @@ export default function ResizableSplit({
                                     toggleLeftPane();
                                 }}
                                 title="Hide Left Pane"
+                                aria-label="Hide left pane"
                             >
                                 <svg
                                     width="12"
@@ -120,6 +121,7 @@ export default function ResizableSplit({
                                     toggleRightPane();
                                 }}
                                 title="Hide Right Pane"
+                                aria-label="Hide right pane"
                             >
                                 <svg
                                     width="12"
@@ -143,6 +145,7 @@ export default function ResizableSplit({
                             className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
                             onClick={toggleRightPane}
                             title="Show Right Pane"
+                            aria-label="Show right pane"
                         >
                             <svg
                                 width="12"
@@ -165,6 +168,7 @@ export default function ResizableSplit({
                             className="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm opacity-70 group-hover:opacity-100 transition-opacity duration-200"
                             onClick={toggleLeftPane}
                             title="Show Left Pane"
+                            aria-label="Show left pane"
                         >
                             <svg
                                 width="12"

@@ -5,6 +5,7 @@ import { parseHeadings } from "../utils/headings";
 import { getParentPath } from "../utils/paths";
 import InlineRename from "./InlineRename";
 import IconAction from "./IconAction";
+import { useToast } from "../contexts/ToastContext";
 
 interface FilesystemBrowserProps {
     roots: TreeNode[];
@@ -239,6 +240,7 @@ export default function FilesystemBrowser({
 
 function useExpandableDir(dirId: string) {
     const { register, unregister } = useTreeContext();
+    const { showToast } = useToast();
     const [expanded, setExpanded] = useState(false);
     const [children, setChildren] = useState<TreeNode[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -293,7 +295,7 @@ function useExpandableDir(dirId: string) {
             setNewlyCreatedId(node.id);
         } catch (err) {
             console.error("Failed to create entry:", err);
-            alert(`Failed to create ${kind}: ${err}`);
+            showToast(`Failed to create ${kind}: ${err}`, "error");
         }
     };
 
@@ -306,7 +308,7 @@ function useExpandableDir(dirId: string) {
             await refreshChildren();
         } catch (err) {
             console.error("Rename failed:", err);
-            alert(`Rename failed: ${err}`);
+            showToast(`Rename failed: ${err}`, "error");
             if (wasNew) {
                 try {
                     await api.deleteEntry(id);
@@ -502,6 +504,7 @@ function FsDirBody({
     onRootsChanged?: () => void;
 }) {
     const { dragState, refreshPath, selectedDocId, onDocumentSelect } = useTreeContext();
+    const { showToast } = useToast();
     const [isDragOver, setIsDragOver] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const indent = depth === 0 ? 12 : 28 + depth * 16;
@@ -527,7 +530,7 @@ function FsDirBody({
             if (srcParent) refreshPath(srcParent);
         } catch (err) {
             console.error("Move failed:", err);
-            alert(`Move failed: ${err}`);
+            showToast(`Move failed: ${err}`, "error");
         }
         dragState.current = null;
     };
@@ -543,7 +546,7 @@ function FsDirBody({
             if (parent) refreshPath(parent);
         } catch (err) {
             console.error("Delete failed:", err);
-            alert(`Delete failed: ${err}`);
+            showToast(`Delete failed: ${err}`, "error");
         }
     };
 
@@ -717,6 +720,7 @@ function FsDocumentRow({
     onRenameCancel: () => void;
 }) {
     const { dragState, refreshPath, selectedDocId, onDocumentSelect } = useTreeContext();
+    const { showToast } = useToast();
     const [tocExpanded, setTocExpanded] = useState(false);
     const [docHeadings, setDocHeadings] = useState<import("../utils/headings").Heading[] | null>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -752,7 +756,7 @@ function FsDocumentRow({
             if (parent) refreshPath(parent);
         } catch (err) {
             console.error("Delete failed:", err);
-            alert(`Delete failed: ${err}`);
+            showToast(`Delete failed: ${err}`, "error");
         }
     };
 

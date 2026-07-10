@@ -13,7 +13,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setTheme] = useState<Theme>(() => {
         // Load theme preference from localStorage, default to dark
         const saved = localStorage.getItem('markdown-ui-theme');
-        return (saved as Theme) || 'dark';
+        return saved === 'light' || saved === 'dark' ? saved : 'dark';
     });
 
     useEffect(() => {

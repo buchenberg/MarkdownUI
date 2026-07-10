@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+
 interface ConfirmModalProps {
     isOpen: boolean;
     title: string;
@@ -17,6 +20,9 @@ export default function ConfirmModal({
     onConfirm,
     onCancel,
 }: ConfirmModalProps) {
+    const modalRef = useRef<HTMLDivElement>(null);
+    useFocusTrap(modalRef, isOpen);
+
     if (!isOpen) return null;
 
     return (
@@ -25,14 +31,19 @@ export default function ConfirmModal({
             onClick={onCancel}
         >
             <div
-                className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4"
+                ref={modalRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="confirm-modal-title"
+                tabIndex={-1}
+                className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6 max-w-md w-full mx-4 outline-none"
                 onClick={(e) => e.stopPropagation()}
             >
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-                <p className="text-gray-600 mb-6">{message}</p>
+                <h3 id="confirm-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">{title}</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
                 <div className="flex justify-end gap-3">
                     <button
-                        className="px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+                        className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                         onClick={onCancel}
                     >
                         {cancelText}
