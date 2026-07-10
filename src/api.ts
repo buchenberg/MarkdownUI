@@ -129,6 +129,14 @@ export async function getMcpServerStatus(): Promise<boolean> {
     return invoke<boolean>("get_mcp_server_status");
 }
 
+export async function getMcpPort(): Promise<number> {
+    return invoke<number>("get_mcp_port");
+}
+
+export async function setMcpPort(port: number): Promise<void> {
+    return invoke<void>("set_mcp_port", { port });
+}
+
 // ── PDF availability ─────────────────────────────────────────────────────────
 
 export async function checkPdfAvailable(): Promise<boolean> {

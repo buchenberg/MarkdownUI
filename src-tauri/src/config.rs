@@ -11,12 +11,19 @@ pub struct WorkspaceEntry {
 pub struct StorageConfig {
     #[serde(default)]
     pub workspaces: Vec<WorkspaceEntry>,
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+}
+
+fn default_mcp_port() -> u16 {
+    3333
 }
 
 impl Default for StorageConfig {
     fn default() -> Self {
         StorageConfig {
             workspaces: Vec::new(),
+            mcp_port: 3333,
         }
     }
 }

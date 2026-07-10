@@ -39,6 +39,7 @@ function AppContent() {
     // MCP server state
     const [mcpRunning, setMcpRunning] = useState(false);
     const [mcpPending, setMcpPending] = useState(false);
+    const [mcpPort, setMcpPort] = useState(3333);
 
     // MCP live update animations
     const [mcpFlash, setMcpFlash] = useState(false);
@@ -66,6 +67,7 @@ function AppContent() {
     useEffect(() => {
         // Check initial MCP server status on mount and load roots
         api.getMcpServerStatus().then(setMcpRunning).catch(() => {});
+        api.getMcpPort().then(setMcpPort).catch(() => {});
         fetchWorkspaceRoots();
     }, []);
 
@@ -191,6 +193,18 @@ function AppContent() {
         }
     };
 
+    // MCP port change
+    const handleMcpPortChange = async (port: number) => {
+        try {
+            await api.setMcpPort(port);
+            setMcpPort(port);
+            showToast(`MCP port changed to ${port}`, "success");
+        } catch (error) {
+            console.error("MCP port change failed:", error);
+            showToast(`Failed to change port: ${error}`, "error");
+        }
+    };
+
     // Workspace root management
     const handleAddWorkspaceRoot = async () => {
         try {
@@ -273,6 +287,7 @@ function AppContent() {
                 onExportDocument={handleExportDocument}
                 mcpRunning={mcpRunning}
                 mcpPending={mcpPending}
+                mcpPort={mcpPort}
                 onMcpToggle={handleMcpToggle}
             />
 
@@ -345,6 +360,8 @@ function AppContent() {
                 mcpRunning={mcpRunning}
                 mcpPending={mcpPending}
                 onMcpToggle={handleMcpToggle}
+                mcpPort={mcpPort}
+                onMcpPortChange={handleMcpPortChange}
                 workspaceRoots={workspaceRoots}
                 onAddWorkspaceRoot={handleAddWorkspaceRoot}
                 onRemoveWorkspaceRoot={handleRemoveWorkspaceRoot}

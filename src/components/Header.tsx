@@ -22,6 +22,7 @@ interface HeaderProps {
     onExportDocument: (format: ExportFormat) => void;
     mcpRunning: boolean;
     mcpPending: boolean;
+    mcpPort: number;
     onMcpToggle: () => void;
 }
 
@@ -44,6 +45,7 @@ export default function Header({
     onExportDocument,
     mcpRunning,
     mcpPending,
+    mcpPort,
     onMcpToggle,
 }: HeaderProps) {
     const { openSettings } = useSettings();
@@ -128,7 +130,7 @@ export default function Header({
             <button
                 onClick={onMcpToggle}
                 disabled={mcpPending}
-                title={mcpRunning ? "MCP server running on :3333 — click to stop" : "Start MCP server on :3333"}
+                title={mcpRunning ? `MCP server running on :${mcpPort} — click to stop` : `Start MCP server on :${mcpPort}`}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border transition-colors duration-150 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                     mcpRunning
                         ? theme === 'dark'

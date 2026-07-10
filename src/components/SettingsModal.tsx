@@ -12,6 +12,8 @@ interface SettingsModalProps {
     mcpRunning: boolean;
     mcpPending: boolean;
     onMcpToggle: () => Promise<void>;
+    mcpPort: number;
+    onMcpPortChange: (port: number) => Promise<void>;
     workspaceRoots: TreeNode[];
     onAddWorkspaceRoot: () => Promise<void>;
     onRemoveWorkspaceRoot: (id: string) => Promise<void>;
@@ -100,13 +102,20 @@ export default function SettingsModal({
     mcpRunning,
     mcpPending,
     onMcpToggle,
+    mcpPort,
+    onMcpPortChange,
     workspaceRoots,
     onAddWorkspaceRoot,
     onRemoveWorkspaceRoot,
 }: SettingsModalProps) {
     const [activeCategory, setActiveCategory] = useState<CategoryId>('general');
+    const [localMcpPort, setLocalMcpPort] = useState(mcpPort);
     const modalRef = useRef<HTMLDivElement>(null);
     useFocusTrap(modalRef, isOpen);
+
+    useEffect(() => {
+        setLocalMcpPort(mcpPort);
+    }, [mcpPort, isOpen]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -226,7 +235,7 @@ export default function SettingsModal({
                                                     </span>
                                                     <span className="block text-xs text-gray-400 dark:text-gray-500">
                                                         {mcpRunning
-                                                            ? 'Running on :3333'
+                                                            ? `Running on :${localMcpPort}`
                                                             : mcpPending
                                                                 ? 'Starting...'
                                                                 : 'Stopped'}
@@ -245,6 +254,39 @@ export default function SettingsModal({
                                                 {mcpPending ? 'Toggling...' : mcpRunning ? 'Stop' : 'Start'}
                                             </button>
                                         </div>
+                                    </div>
+
+                                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                        Configuration
+                                    </h3>
+                                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
+                                        <div className="flex items-center gap-4">
+                                            <label className="text-sm text-gray-700 dark:text-gray-300">
+                                                Port:
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1024"
+                                                max="65535"
+                                                value={localMcpPort}
+                                                onChange={(e) => setLocalMcpPort(parseInt(e.target.value) || 3333)}
+                                                onBlur={() => {
+                                                    const port = Math.max(1024, Math.min(65535, localMcpPort));
+                                                    if (port !== mcpPort) {
+                                                        onMcpPortChange(port);
+                                                    }
+                                                }}
+                                                className="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            />
+                                            <span className="text-xs text-gray-400 dark:text-gray-500">
+                                                (1024-65535)
+                                            </span>
+                                        </div>
+                                        {mcpRunning && (
+                                            <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+                                                Stop the server before changing the port.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

@@ -25,6 +25,9 @@ struct McpServerState(Mutex<Option<JoinHandle<()>>>);
 type FsArc = Arc<FilesystemStorage>;
 type FsState<'a> = State<'a, FsArc>;
 
+/// Storage config state for getting/setting MCP port.
+type ConfigArc = Arc<RwLock<StorageConfig>>;
+
 // ── Unified storage commands ─────────────────────────────────────────────────
 
 #[tauri::command]
@@ -145,6 +148,7 @@ async fn start_mcp_server(
     app_handle: tauri::AppHandle,
     mcp_state: State<'_, McpServerState>,
     fs_arc: State<'_, FsArc>,
+    config: State<'_, ConfigArc>,
 ) -> Result<(), String> {
     // Check if already running — drop the guard before any .await
     {
@@ -156,10 +160,18 @@ async fn start_mcp_server(
 
     let router = mcp_server::build_router(Arc::clone(&fs_arc), app_handle);
 
+    // Get the configured port
+    let port = {
+        let config_guard = config.read().map_err(|e| e.to_string())?;
+        config_guard.mcp_port
+    };
+
+    let bind_addr = format!("127.0.0.1:{}", port);
+
     // Async bind happens with no mutex held
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3333")
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
-        .map_err(|e| format!("Failed to bind MCP port 3333: {e}"))?;
+        .map_err(|e| format!("Failed to bind MCP port {}: {}", port, e))?;
 
     let handle = tokio::spawn(async move {
         let _ = axum::serve(listener, router).await;
@@ -186,6 +198,37 @@ fn get_mcp_server_status(mcp_state: State<'_, McpServerState>) -> Result<bool, S
     Ok(handle_guard.is_some())
 }
 
+#[tauri::command]
+fn get_mcp_port(config: State<'_, ConfigArc>) -> Result<u16, String> {
+    let config_guard = config.read().map_err(|e| e.to_string())?;
+    Ok(config_guard.mcp_port)
+}
+
+#[tauri::command]
+fn set_mcp_port(
+    port: u16,
+    config: State<'_, ConfigArc>,
+    app_data_dir: tauri::State<'_, std::sync::Mutex<Option<std::path::PathBuf>>>,
+) -> Result<(), String> {
+    if port < 1024 || port > u16::MAX {
+        return Err("Port must be between 1024 and 65535".to_string());
+    }
+    {
+        let mut config_guard = config.write().map_err(|e| e.to_string())?;
+        config_guard.mcp_port = port;
+    }
+    // Save to disk
+    let dir = {
+        let dir_guard = app_data_dir.lock().map_err(|e| e.to_string())?;
+        dir_guard.clone()
+    };
+    if let Some(dir) = dir {
+        let config_guard = config.read().map_err(|e| e.to_string())?;
+        config_guard.save(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -199,13 +242,15 @@ fn main() {
 
             // Single filesystem-backed storage backend
             let backend: FsArc = Arc::new(FilesystemStorage::new(
-                config_arc,
+                Arc::clone(&config_arc),
                 app_data_dir.clone(),
             ));
 
             // Manage state
             app.manage(backend);                               // FilesystemStorage
             app.manage(McpServerState(Mutex::new(None)));      // MCP server handle
+            app.manage(config_arc);                             // StorageConfig (for MCP port)
+            app.manage(std::sync::Mutex::new(Some(app_data_dir))); // app data dir for config saving
 
             Ok(())
         })
@@ -227,6 +272,8 @@ fn main() {
             start_mcp_server,
             stop_mcp_server,
             get_mcp_server_status,
+            get_mcp_port,
+            set_mcp_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
