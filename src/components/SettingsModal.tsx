@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import SegmentedToggle from './SegmentedToggle';
 import SettingsRow from './SettingsRow';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { TreeNode } from '../api';
 
 interface SettingsModalProps {
@@ -104,6 +105,8 @@ export default function SettingsModal({
     onRemoveWorkspaceRoot,
 }: SettingsModalProps) {
     const [activeCategory, setActiveCategory] = useState<CategoryId>('general');
+    const modalRef = useRef<HTMLDivElement>(null);
+    useFocusTrap(modalRef, isOpen);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -126,12 +129,17 @@ export default function SettingsModal({
             onClick={onClose}
         >
             <div
-                className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[700px] h-[480px] mx-4 flex flex-col overflow-hidden"
+                ref={modalRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-modal-title"
+                tabIndex={-1}
+                className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[700px] h-[480px] mx-4 flex flex-col overflow-hidden outline-none"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Full-width title bar */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                    <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                    <span id="settings-modal-title" className="text-base font-semibold text-gray-900 dark:text-gray-100">
                         Settings
                     </span>
                     <button
