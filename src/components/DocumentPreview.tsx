@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, forwardRef, useMemo, createCo
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import mermaid from "mermaid";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
@@ -26,6 +27,17 @@ interface HeadingContextValue {
     theme: 'light' | 'dark';
 }
 const HeadingContext = createContext<HeadingContextValue | null>(null);
+
+// Sanitization schema: extends the safe GitHub-style default to allow `class`
+// attributes (used for legitimate markdown styling), while still stripping
+// <script>, event handlers (onclick, etc.), and javascript: URLs.
+const sanitizeSchema = {
+    ...defaultSchema,
+    attributes: {
+        ...defaultSchema.attributes,
+        '*': [...(defaultSchema.attributes?.['*'] ?? []), 'className'],
+    },
+};
 
 function HeadingRenderer({ children, node }: any) {
     const ctx = useContext(HeadingContext);
@@ -425,7 +437,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                     >
                         <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeRaw]}
+                            rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
                             components={markdownComponents}
                         >
                             {processedContent}
