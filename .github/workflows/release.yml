@@ -13,7 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest]
+        include:
+          - platform: windows-latest
+            args: ''
+          - platform: macos-latest
+            # Build a universal binary so the DMG runs on both
+            # Apple Silicon (aarch64) and Intel (x86_64) Macs.
+            args: '--target universal-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
 
@@ -29,6 +35,9 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both targets are required to build a universal macOS binary.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Set version from tag
         shell: bash
@@ -57,6 +66,14 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'MarkdownUI ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: |
+            See the assets to download and install this version.
+
+            **macOS note:** The app is not code-signed (no paid Apple Developer certificate). After installing, macOS Gatekeeper may report the app as "damaged" or from an "unidentified developer." Clear the quarantine flag to run it:
+
+            ```
+            xattr -cr /Applications/MarkdownUI.app
+            ```
           releaseDraft: false
           prerelease: false
+          args: ${{ matrix.args }}

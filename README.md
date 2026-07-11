@@ -39,8 +39,19 @@ Download the latest release for your platform from the [GitHub Releases](https:/
 
 **Supported Platforms:**
 - **Windows**: Installer (`.msi`)
-- **macOS**: Disk Image (`.dmg`)
-- **Linux**: Debian package (`.deb`) and AppImage
+- **macOS**: Disk Image (`.dmg`) — universal binary (Apple Silicon + Intel)
+
+### macOS: Bypassing Gatekeeper
+
+MarkdownUI is **not code-signed** (no paid Apple Developer certificate). When you download the DMG and install it, macOS Gatekeeper may show *"MarkdownUI is damaged and can't be opened"* or *"cannot be opened because the developer cannot be verified."* This is the quarantine flag Gatekeeper applies to unsigned downloads — the app itself is fine.
+
+After dragging **MarkdownUI.app** into `/Applications`, clear the quarantine flag:
+
+```bash
+xattr -cr /Applications/MarkdownUI.app
+```
+
+Then launch the app normally. Alternatively, right-click the app and choose **Open** the first time, then confirm.
 
 ## Usage
 
@@ -262,9 +273,9 @@ PR merged to main
        └─ Creates GitHub Release with changelog
                 │
                 ▼
-       GitHub Actions (on v* tag)
-                │
-                └─ Builds macOS / Windows / Linux binaries
+        GitHub Actions (on v* tag)
+                 │
+                 └─ Builds macOS (universal) / Windows binaries
 ```
 
 #### Commit Convention
