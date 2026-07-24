@@ -25,6 +25,7 @@ interface HeadingContextValue {
     headingSlugsByLine: Map<number, string>;
     onNavigateToLine?: (line: number) => void;
     theme: 'light' | 'dark';
+    lineOffset: number;
 }
 const HeadingContext = createContext<HeadingContextValue | null>(null);
 
@@ -53,7 +54,7 @@ function HeadingRenderer({ children, node }: any) {
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        ctx.onNavigateToLine!(line);
+                        ctx.onNavigateToLine!(line + ctx.lineOffset);
                     }}
                     className={`opacity-0 group-hover:opacity-100 transition-opacity ml-2 p-1 rounded-md ${ctx.theme === 'dark'
                         ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200'
@@ -72,7 +73,39 @@ function HeadingRenderer({ children, node }: any) {
     );
 }
 
-// Mermaid code block component
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
+function YamlFrontmatter({ yaml, theme }: { yaml: string; theme: 'light' | 'dark' }) {
+    return (
+        <div className={`frontmatter-block ${theme === 'dark' ? 'frontmatter-dark' : 'frontmatter-light'}`}>
+            <div className="frontmatter-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+                <span>Frontmatter</span>
+            </div>
+            <SyntaxHighlighter
+                style={theme === 'dark' ? oneDark : oneLight}
+                language="yaml"
+                PreTag="div"
+                wrapLongLines
+                codeTagProps={{ style: { padding: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }}
+                customStyle={{
+                    margin: 0,
+                    padding: 0,
+                    borderRadius: 0,
+                    background: 'transparent',
+                }}
+            >
+                {yaml.trim()}
+            </SyntaxHighlighter>
+        </div>
+    );
+}
+
 function MermaidDiagram({ code, theme }: { code: string; theme: 'light' | 'dark' }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
@@ -122,33 +155,6 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const previewRef = useRef<HTMLDivElement>(null);
         const combinedRef = useCombinedRefs(ref, previewRef);
 
-        // Pre-compute heading slug → line number mapping so HeadingRenderer can assign stable IDs
-        const headingSlugsByLine = useMemo(() => {
-            const result = new Map<number, string>();
-            const slugCounts = new Map<string, number>();
-            let lineNum = 0;
-            for (const line of content.split('\n')) {
-                lineNum++;
-                const match = line.match(/^(#{1,6})\s+(.+)/);
-                if (match) {
-                    const text = match[2].trim();
-                    let id = slugify(text);
-                    const count = slugCounts.get(id) ?? 0;
-                    slugCounts.set(id, count + 1);
-                    if (count > 0) id = `${id}-${count}`;
-                    result.set(lineNum, id);
-                }
-            }
-            return result;
-        }, [content]);
-        const [isDragging, setIsDragging] = useState(false);
-        const [startX, setStartX] = useState(0);
-        const [startY, setStartY] = useState(0);
-        const [scrollLeft, setScrollLeft] = useState(0);
-        const [scrollTop, setScrollTop] = useState(0);
-        const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-        const { theme } = useTheme();
-
         // Convert :::mermaid blocks to ```mermaid for consistent processing
         // Memoized so it only recomputes when content changes (not on every render)
         const processedContent = useMemo(() => content
@@ -165,6 +171,46 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                 return line;
             })
             .join('\n'), [content]);
+
+        const { frontmatter, markdownBody, frontmatterLineOffset } = useMemo(() => {
+            const match = FRONTMATTER_RE.exec(processedContent);
+            if (!match) return { frontmatter: null as string | null, markdownBody: processedContent, frontmatterLineOffset: 0 };
+            return {
+                frontmatter: match[1],
+                markdownBody: processedContent.slice(match[0].length),
+                frontmatterLineOffset: match[0].split('\n').length - 1,
+            };
+        }, [processedContent]);
+
+        // Pre-compute heading slug → line number mapping so HeadingRenderer can assign stable IDs.
+        // Line numbers are relative to markdownBody (frontmatter stripped), so we add the
+        // frontmatter offset when navigating to source.
+        const headingSlugsByLine = useMemo(() => {
+            const result = new Map<number, string>();
+            const slugCounts = new Map<string, number>();
+            let lineNum = 0;
+            for (const line of markdownBody.split('\n')) {
+                lineNum++;
+                const match = line.match(/^(#{1,6})\s+(.+)/);
+                if (match) {
+                    const text = match[2].trim();
+                    let id = slugify(text);
+                    const count = slugCounts.get(id) ?? 0;
+                    slugCounts.set(id, count + 1);
+                    if (count > 0) id = `${id}-${count}`;
+                    result.set(lineNum, id);
+                }
+            }
+            return result;
+        }, [markdownBody]);
+
+        const [isDragging, setIsDragging] = useState(false);
+        const [startX, setStartX] = useState(0);
+        const [startY, setStartY] = useState(0);
+        const [scrollLeft, setScrollLeft] = useState(0);
+        const [scrollTop, setScrollTop] = useState(0);
+        const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+        const { theme } = useTheme();
 
         // Memoize ReactMarkdown component overrides so renderers aren't redefined each render
         const markdownComponents = useMemo(() => ({
@@ -192,8 +238,8 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                     ? rawChildren.join("")
                     : String(rawChildren ?? "")
                 )
-                    .replace(/^\n/, "")
-                    .replace(/\n$/, "");
+                    .replace(/^\n\s*/, "")
+                    .replace(/\s*\n$/, "");
 
                 // Handle mermaid code blocks
                 if (language === "mermaid") {
@@ -205,8 +251,11 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         style={theme === 'dark' ? oneDark : oneLight}
                         language={language}
                         PreTag="div"
+                        wrapLongLines
+                        codeTagProps={{ style: { padding: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }}
                         customStyle={{
                             margin: '1em 0',
+                            padding: '1em',
                             borderRadius: '0.375rem',
                             fontSize: '0.875em',
                         }}
@@ -435,7 +484,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         </button>
                     </div>
                 )}
-                <HeadingContext.Provider value={{ headingSlugsByLine, onNavigateToLine, theme }}>
+                <HeadingContext.Provider value={{ headingSlugsByLine, onNavigateToLine, theme, lineOffset: frontmatterLineOffset }}>
                     <div
                         className="markdown-preview"
                         style={{
@@ -444,12 +493,13 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                             transition: "transform 0.2s ease",
                         }}
                     >
+                        {frontmatter && <YamlFrontmatter yaml={frontmatter} theme={theme} />}
                         <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
                             components={markdownComponents}
                         >
-                            {processedContent}
+                            {markdownBody}
                         </ReactMarkdown>
                     </div>
                 </HeadingContext.Provider>
