@@ -4,6 +4,12 @@ All notable changes to MarkdownUI are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0](https://github.com/buchenberg/MarkdownUI/compare/v1.7.0...v1.8.0) (2026-07-24)
+
+### Features
+
+* render YAML frontmatter with syntax highlighting in preview ([1c8c882](https://github.com/buchenberg/MarkdownUI/commit/1c8c882b5e3af6b8281fa7afb8835d76992ad526))
+
 ## [1.5.0](https://github.com/buchenberg/MarkdownUI/compare/v1.4.6...v1.5.0) (2026-06-19)
 
 ### Features
