@@ -14,6 +14,7 @@ use filesystem::FilesystemStorage;
 use config::StorageConfig;
 use std::sync::{Arc, Mutex, RwLock};
 use std::fs;
+use std::process::Command;
 use tauri::{State, Manager};
 use tauri::api::path::app_data_dir;
 use tokio::task::JoinHandle;
@@ -139,6 +140,93 @@ fn storage_export_document(
 #[tauri::command]
 fn check_pdf_available() -> Result<bool, String> {
     check_chrome_available().map(|_| true)
+}
+
+#[tauri::command]
+fn open_in_terminal(path: String) -> Result<(), String> {
+    let path_buf = std::path::PathBuf::from(&path);
+    let dir = if path_buf.is_dir() {
+        path_buf
+    } else {
+        path_buf.parent().map(|p| p.to_path_buf()).unwrap_or(path_buf)
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/c", "start", "cmd", "/K", &format!("cd /d \"{}\"", dir.display())])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "tell application \"Terminal\" to do script \"cd '{}' && clear\"",
+            dir.display()
+        );
+        Command::new("osascript")
+            .args(["-e", &script])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let term = std::env::var("TERMINAL").unwrap_or_else(|_| "x-terminal-emulator".to_string());
+        Command::new(&term)
+            .arg("--working-directory")
+            .arg(dir.to_str().unwrap_or("."))
+            .spawn()
+            .or_else(|_| {
+                Command::new("x-terminal-emulator")
+                    .arg("--working-directory")
+                    .arg(dir.to_str().unwrap_or("."))
+                    .spawn()
+            })
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn reveal_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let path_buf = std::path::PathBuf::from(&path);
+        if path_buf.is_file() {
+            Command::new("explorer")
+                .args(["/select,", &path])
+                .spawn()
+                .map_err(|e| format!("Failed to open explorer: {}", e))?;
+        } else {
+            Command::new("explorer")
+                .arg(&path)
+                .spawn()
+                .map_err(|e| format!("Failed to open explorer: {}", e))?;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal in Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let path_buf = std::path::PathBuf::from(&path);
+        let dir = if path_buf.is_dir() { &path_buf } else { path_buf.parent().unwrap_or(&path_buf) };
+        Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+
+    Ok(())
 }
 
 // ── MCP server commands ───────────────────────────────────────────────────────
@@ -269,6 +357,8 @@ fn main() {
             storage_search,
             storage_export_document,
             check_pdf_available,
+            open_in_terminal,
+            reveal_in_explorer,
             start_mcp_server,
             stop_mcp_server,
             get_mcp_server_status,

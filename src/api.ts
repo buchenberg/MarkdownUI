@@ -147,6 +147,16 @@ export async function checkPdfAvailable(): Promise<boolean> {
     }
 }
 
+// ── System integration ───────────────────────────────────────────────────────
+
+export async function openInTerminal(path: string): Promise<void> {
+    return invoke<void>("open_in_terminal", { path });
+}
+
+export async function revealInExplorer(path: string): Promise<void> {
+    return invoke<void>("reveal_in_explorer", { path });
+}
+
 // ── Folder picker ────────────────────────────────────────────────────────────
 
 export async function pickDirectory(): Promise<string | null> {

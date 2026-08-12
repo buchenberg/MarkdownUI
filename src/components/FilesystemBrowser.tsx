@@ -5,6 +5,8 @@ import { parseHeadings } from "../utils/headings";
 import { getParentPath } from "../utils/paths";
 import InlineRename from "./InlineRename";
 import IconAction from "./IconAction";
+import ContextMenu from "./ContextMenu";
+import type { ContextMenuItem } from "./ContextMenu";
 import { useToast } from "../contexts/ToastContext";
 
 interface FilesystemBrowserProps {
@@ -507,6 +509,7 @@ function FsDirBody({
     const { showToast } = useToast();
     const [isDragOver, setIsDragOver] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
     const indent = depth === 0 ? 12 : 28 + depth * 16;
 
     const canDropHere = (): boolean => {
@@ -574,6 +577,11 @@ function FsDirBody({
                 onDragOver={(e) => { if (canDropHere()) { e.preventDefault(); setIsDragOver(true); } }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setContextMenuPos({ x: e.clientX, y: e.clientY });
+                }}
             >
                 {/* Chevron */}
                 <span className={`flex-shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 dark:text-gray-500 transition-transform duration-100 ${expanded ? "" : "-rotate-90"}`}>
@@ -694,6 +702,33 @@ function FsDirBody({
                     )}
                 </div>
             )}
+
+            {/* Context menu */}
+            {contextMenuPos && (
+                <ContextMenu
+                    items={(() => {
+                        const items: ContextMenuItem[] = [
+                            { label: "New Document", onClick: () => onCreate("document") },
+                            { label: "New Folder", onClick: () => onCreate("folder") },
+                            { label: "Open in Terminal", onClick: () => { api.openInTerminal(node.id); }, separator: true },
+                            { label: "Open in Explorer", onClick: () => { api.revealInExplorer(node.id); } },
+                        ];
+                        if (!isRoot) {
+                            items.push(
+                                { label: "Rename", onClick: () => onRenameStart(node.id), separator: true },
+                                { label: "Delete", onClick: () => setConfirmDelete(true), danger: true },
+                            );
+                        } else if (onRemoveWorkspaceRoot) {
+                            items.push(
+                                { label: "Remove root from sidebar", onClick: async () => { await onRemoveWorkspaceRoot(node.id); onRootsChanged?.(); }, separator: true, danger: true },
+                            );
+                        }
+                        return items;
+                    })()}
+                    position={contextMenuPos}
+                    onClose={() => setContextMenuPos(null)}
+                />
+            )}
         </div>
     );
 }
@@ -724,6 +759,7 @@ function FsDocumentRow({
     const [tocExpanded, setTocExpanded] = useState(false);
     const [docHeadings, setDocHeadings] = useState<import("../utils/headings").Heading[] | null>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
     const indent = 28 + depth * 16;
 
     const loadHeadings = async () => {
@@ -778,6 +814,12 @@ function FsDocumentRow({
                     api.getEntry(doc.id).then((entry) => entry && onDocumentSelect(entry));
                 }}
                 onDoubleClick={(e) => { e.stopPropagation(); onRenameStart(); }}
+                onContextMenu={(e) => {
+                    if (renaming) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setContextMenuPos({ x: e.clientX, y: e.clientY });
+                }}
             >
                 {/* TOC chevron */}
                 <button
@@ -855,6 +897,19 @@ function FsDocumentRow({
                     indent={indent}
                     onConfirm={handleDelete}
                     onCancel={() => setConfirmDelete(false)}
+                />
+            )}
+
+            {/* Context menu */}
+            {contextMenuPos && (
+                <ContextMenu
+                    items={[
+                        { label: "Rename", onClick: onRenameStart },
+                        { label: "Open in Explorer", onClick: () => { api.revealInExplorer(doc.id); }, separator: true },
+                        { label: "Delete", onClick: () => setConfirmDelete(true), separator: true, danger: true },
+                    ]}
+                    position={contextMenuPos}
+                    onClose={() => setContextMenuPos(null)}
                 />
             )}
         </div>
