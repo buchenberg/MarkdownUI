@@ -10,6 +10,8 @@ import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import TurndownService from "turndown";
 import { useTheme } from "../ThemeContext";
 import { slugify } from "../utils/slugify";
+import TableEditorModal from "./TableEditorModal";
+import { parseMarkdownTable, extractTablesFromMarkdown, replaceTableInContent, cloneTableData, type TableData } from "../utils/tables";
 
 interface DocumentPreviewProps {
     content: string;
@@ -17,6 +19,7 @@ interface DocumentPreviewProps {
     onNavigateToLine?: (line: number) => void;
     scrollToHeadingId?: string | null;
     onHeadingScrolled?: () => void;
+    onContentChange?: (content: string) => void;
 }
 
 // Context shares heading-slug data + callbacks with the hoisted HeadingRenderer,
@@ -210,7 +213,78 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         const [scrollLeft, setScrollLeft] = useState(0);
         const [scrollTop, setScrollTop] = useState(0);
         const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+        const [editingTable, setEditingTable] = useState<TableData | null>(null);
         const { theme } = useTheme();
+
+        // Handle table editing
+        const handleEditTable = useCallback((tableIndex: number) => {
+            const tables = extractTablesFromMarkdown(markdownBody);
+            if (tables[tableIndex]) {
+                setEditingTable(cloneTableData(tables[tableIndex]));
+            }
+        }, [markdownBody]);
+
+        const handleSaveTable = useCallback((updatedTable: TableData) => {
+            if (!onContentChange) return;
+            const tables = extractTablesFromMarkdown(markdownBody);
+            const tableIndex = tables.findIndex(t => 
+                t.startLine === updatedTable.startLine && 
+                t.endLine === updatedTable.endLine
+            );
+            if (tableIndex !== -1) {
+                const newMarkdown = replaceTableInContent(
+                    markdownBody,
+                    tables[tableIndex],
+                    updatedTable.rawContent
+                );
+                const newContent = frontmatter 
+                    ? frontmatter + '\n---\n' + newMarkdown
+                    : newMarkdown;
+                onContentChange(newContent);
+            }
+            setEditingTable(null);
+        }, [markdownBody, frontmatter, onContentChange]);
+
+        // Custom Table component with edit button
+        const TableComponent = useCallback(({ children, node }: any) => {
+            // Find which table this is by counting table nodes
+            const tables = extractTablesFromMarkdown(markdownBody);
+            const tableIndex = node?.position?.start?.line 
+                ? tables.findIndex(t => t.startLine <= node.position.start.line && t.endLine >= node.position.start.line)
+                : -1;
+
+            if (tableIndex === -1) {
+                // Fallback to default table rendering
+                return <table>{children}</table>;
+            }
+
+            return (
+                <div className="relative group">
+                    <table>{children}</table>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            handleEditTable(tableIndex);
+                        }}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 
+                                   p-1.5 rounded-md shadow-md transition-opacity duration-200
+                                   hover:scale-105 active:scale-95"
+                        title="Edit table"
+                        aria-label="Edit table"
+                        style={{ 
+                            background: theme === 'dark' ? '#374151' : '#f3f4f6',
+                            color: theme === 'dark' ? '#d1d5db' : '#374151'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                    </button>
+                </div>
+            );
+        }, [markdownBody, theme, handleEditTable]);
 
         // Memoize ReactMarkdown component overrides so renderers aren't redefined each render
         const markdownComponents = useMemo(() => ({
@@ -226,6 +300,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
             h4: HeadingRenderer,
             h5: HeadingRenderer,
             h6: HeadingRenderer,
+            table: TableComponent,
             // Fenced/indented code blocks. Unqualified fences (no language) render
             // as a plain "text" block via the syntax highlighter.
             pre({ children }: any) {
@@ -264,7 +339,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                     </SyntaxHighlighter>
                 );
             },
-        }), [theme]);
+        }), [theme, TableComponent]);
 
         // Mouse event handlers for drag scrolling
         const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -483,6 +558,14 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                             Copy as Markdown
                         </button>
                     </div>
+                )}
+                {editingTable && onContentChange && (
+                    <TableEditorModal
+                        isOpen={!!editingTable}
+                        tableData={editingTable}
+                        onSave={handleSaveTable}
+                        onCancel={() => setEditingTable(null)}
+                    />
                 )}
                 <HeadingContext.Provider value={{ headingSlugsByLine, onNavigateToLine, theme, lineOffset: frontmatterLineOffset }}>
                     <div

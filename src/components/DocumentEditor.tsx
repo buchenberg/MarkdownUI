@@ -149,6 +149,7 @@ export default function DocumentEditor({
                                     onNavigateToLine={handleNavigateToLine}
                                     scrollToHeadingId={scrollToHeadingId}
                                     onHeadingScrolled={onHeadingScrolled}
+                                    onContentChange={onContentChange}
                                 />
                             </div>
                         </div>
