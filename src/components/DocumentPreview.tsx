@@ -11,7 +11,7 @@ import TurndownService from "turndown";
 import { useTheme } from "../ThemeContext";
 import { slugify } from "../utils/slugify";
 import TableEditorModal from "./TableEditorModal";
-import { parseMarkdownTable, extractTablesFromMarkdown, replaceTableInContent, cloneTableData, type TableData } from "../utils/tables";
+import { extractTablesFromMarkdown, replaceTableInContent, cloneTableData, type TableData } from "../utils/tables";
 
 interface DocumentPreviewProps {
     content: string;
@@ -154,7 +154,7 @@ function MermaidDiagram({ code, theme }: { code: string; theme: 'light' | 'dark'
 }
 
 const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
-    function DocumentPreview({ content, zoomLevel = 1.0, onNavigateToLine, scrollToHeadingId, onHeadingScrolled }, ref) {
+    function DocumentPreview({ content, zoomLevel = 1.0, onNavigateToLine, scrollToHeadingId, onHeadingScrolled, onContentChange }, ref) {
         const previewRef = useRef<HTMLDivElement>(null);
         const combinedRef = useCombinedRefs(ref, previewRef);
 
@@ -246,18 +246,13 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
         }, [markdownBody, frontmatter, onContentChange]);
 
         // Custom Table component with edit button
+        const tables = useMemo(() => extractTablesFromMarkdown(markdownBody), [markdownBody]);
+        
         const TableComponent = useCallback(({ children, node }: any) => {
-            // Find which table this is by counting table nodes
-            const tables = extractTablesFromMarkdown(markdownBody);
-            const tableIndex = node?.position?.start?.line 
-                ? tables.findIndex(t => t.startLine <= node.position.start.line && t.endLine >= node.position.start.line)
+            const startLine: number | undefined = node?.position?.start?.line;
+            const tableIndex = startLine !== undefined
+                ? tables.findIndex((t) => t.startLine === startLine)
                 : -1;
-
-            if (tableIndex === -1) {
-                // Fallback to default table rendering
-                return <table>{children}</table>;
-            }
-
             return (
                 <div className="relative group">
                     <table>{children}</table>
@@ -265,14 +260,14 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         onClick={(e) => {
                             e.stopPropagation();
                             e.preventDefault();
-                            handleEditTable(tableIndex);
+                            if (tableIndex !== -1) {
+                                handleEditTable(tableIndex);
+                            }
                         }}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 
-                                   p-1.5 rounded-md shadow-md transition-opacity duration-200
-                                   hover:scale-105 active:scale-95"
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-md shadow-md transition-opacity duration-200 hover:scale-105 active:scale-95 z-10 cursor-pointer"
                         title="Edit table"
                         aria-label="Edit table"
-                        style={{ 
+                        style={{
                             background: theme === 'dark' ? '#374151' : '#f3f4f6',
                             color: theme === 'dark' ? '#d1d5db' : '#374151'
                         }}
@@ -284,26 +279,27 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                     </button>
                 </div>
             );
-        }, [markdownBody, theme, handleEditTable]);
+        }, [markdownBody, theme, handleEditTable, tables]);
 
         // Memoize ReactMarkdown component overrides so renderers aren't redefined each render
         const markdownComponents = useMemo(() => ({
             // Inline code only. Block code (fenced/indented) is rendered by `pre`
-            // below — react-markdown wraps every code block in <pre>, never inline,
-            // so `pre` is the reliable place to distinguish block vs inline.
-            code({ node, className, children, ...props }: any) {
-                return <code className={className} {...props}>{children}</code>;
-            },
-            h1: HeadingRenderer,
-            h2: HeadingRenderer,
-            h3: HeadingRenderer,
-            h4: HeadingRenderer,
-            h5: HeadingRenderer,
-            h6: HeadingRenderer,
-            table: TableComponent,
-            // Fenced/indented code blocks. Unqualified fences (no language) render
-            // as a plain "text" block via the syntax highlighter.
-            pre({ children }: any) {
+                // Inline code only. Block code (fenced/indented) is rendered by `pre`
+                // below — react-markdown wraps every code block in <pre>, never inline,
+                // so `pre` is the reliable place to distinguish block vs inline.
+                code({ node, className, children, ...props }: any) {
+                    return <code className={className} {...props}>{children}</code>;
+                },
+                h1: HeadingRenderer,
+                h2: HeadingRenderer,
+                h3: HeadingRenderer,
+                h4: HeadingRenderer,
+                h5: HeadingRenderer,
+                h6: HeadingRenderer,
+                table: TableComponent,
+                // Fenced/indented code blocks. Unqualified fences (no language) render
+                // as a plain "text" block via the syntax highlighter.
+                pre({ children }: any) {
                 const child = Array.isArray(children) ? children[0] : children;
                 const className: string = child?.props?.className || "";
                 const match = /language-(\w+)/.exec(className);
@@ -559,7 +555,7 @@ const DocumentPreview = forwardRef<HTMLDivElement, DocumentPreviewProps>(
                         </button>
                     </div>
                 )}
-                {editingTable && onContentChange && (
+                {editingTable && (
                     <TableEditorModal
                         isOpen={!!editingTable}
                         tableData={editingTable}

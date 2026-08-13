@@ -4,7 +4,9 @@ import {
     extractTablesFromMarkdown, 
     replaceTableInContent,
     createEmptyTable,
-    cloneTableData
+    cloneTableData,
+    tableDataToGrid,
+    gridToTableData
 } from './tables';
 
 describe('Table Parsing', () => {
@@ -121,5 +123,59 @@ After
         expect(cloned.rows).not.toBe(parsed!.rows);
         expect(cloned.rows[0].cells).not.toBe(parsed!.rows[0].cells);
         expect(cloned.rows[0].cells[0].content).toBe(parsed!.rows[0].cells[0].content);
+    });
+
+    test('tableDataToGrid maps header to columns and data to rows', () => {
+        const markdown = `
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L1   | C1     | R1    |
+| L2   | C2     | R2    |
+`;
+        const parsed = parseMarkdownTable(markdown)!;
+        const grid = tableDataToGrid(parsed);
+
+        expect(grid.columns.length).toBe(3);
+        expect(grid.columns[0]).toEqual({ id: 'c0', header: 'Left', alignment: 'left' });
+        expect(grid.columns[1]).toEqual({ id: 'c1', header: 'Center', alignment: 'center' });
+        expect(grid.columns[2]).toEqual({ id: 'c2', header: 'Right', alignment: 'right' });
+
+        expect(grid.rows.length).toBe(2);
+        expect(grid.rows[0]).toEqual({ id: 'r0', cells: { c0: 'L1', c1: 'C1', c2: 'R1' } });
+        expect(grid.rows[1]).toEqual({ id: 'r1', cells: { c0: 'L2', c1: 'C2', c2: 'R2' } });
+    });
+
+    test('gridToTableData round-trips content and alignment', () => {
+        const markdown = `
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L1   | C1     | R1    |
+`;
+        const parsed = parseMarkdownTable(markdown)!;
+        const grid = tableDataToGrid(parsed);
+        const restored = gridToTableData(grid, { startLine: parsed.startLine, endLine: parsed.endLine });
+
+        expect(restored.rows.length).toBe(2);
+        expect(restored.rows[0].isHeader).toBe(true);
+        expect(restored.rows[0].cells[0]).toEqual({ content: 'Left', alignment: 'left' });
+        expect(restored.rows[1].cells[0]).toEqual({ content: 'L1', alignment: null });
+        expect(restored.startLine).toBe(parsed.startLine);
+        expect(restored.endLine).toBe(parsed.endLine);
+        expect(restored.rawContent).toBe(tableToMarkdown(parsed));
+    });
+
+    test('grid round-trip preserves plain table markdown', () => {
+        const markdown = `
+| A | B |
+|---|---|
+| 1 | 2 |
+`;
+        const parsed = parseMarkdownTable(markdown)!;
+        const grid = tableDataToGrid(parsed);
+        const restored = gridToTableData(grid, { startLine: parsed.startLine, endLine: parsed.endLine });
+
+        expect(restored.rawContent).toContain('| A | B |');
+        expect(restored.rawContent).toContain('|---|---|');
+        expect(restored.rawContent).toContain('| 1 | 2 |');
     });
 });

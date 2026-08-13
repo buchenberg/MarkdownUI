@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 export interface ContextMenuItem {
     label: string;

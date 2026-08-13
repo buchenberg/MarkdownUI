@@ -9,11 +9,16 @@
  */
 
 /**
+ * Column alignment for a markdown table
+ */
+export type Alignment = 'left' | 'center' | 'right' | null;
+
+/**
  * Represents a single cell in a markdown table
  */
 export interface TableCell {
   content: string;
-  alignment: 'left' | 'center' | 'right' | null;
+  alignment: Alignment;
 }
 
 /**
@@ -37,7 +42,7 @@ export interface TableData {
 /**
  * Parse alignment from separator cell content
  */
-function parseAlignment(separator: string): 'left' | 'center' | 'right' | null {
+function parseAlignment(separator: string): Alignment {
   const trimmed = separator.trim();
   if (trimmed.startsWith(':') && trimmed.endsWith(':')) return 'center';
   if (trimmed.endsWith(':')) return 'right';
@@ -47,21 +52,19 @@ function parseAlignment(separator: string): 'left' | 'center' | 'right' | null {
 
 /**
  * Check if a line is a table separator row
- * Separator rows contain only |, -, :, and spaces
+ * Separator rows contain |, -, :, and spaces (with or without outer pipes)
  */
 function isSeparatorRow(line: string): boolean {
   const trimmed = line.trim();
-  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return false;
   
-  // Remove pipes and check if only contains dashes, colons, and spaces
-  const inner = trimmed.slice(1, -1);
-  const clean = inner.replace(/\s/g, '');
+  // Check if line looks like a separator (contains only pipes, dashes, colons, and spaces)
+  const clean = trimmed.replace(/\s/g, '');
   
-  // Must contain at least one dash and only dashes/colons
+  // Must contain at least one dash and only dashes/colons/pipes
   if (!clean.includes('-')) return false;
   
   for (const char of clean) {
-    if (char !== '-' && char !== ':') return false;
+    if (char !== '-' && char !== ':' && char !== '|') return false;
   }
   
   return true;
@@ -100,7 +103,7 @@ function parseRow(line: string, isSeparator: boolean = false): TableCell[] {
  */
 export function parseMarkdownTable(
   markdown: string,
-  startLine: number = 0
+  _startLine: number = 0
 ): TableData | null {
   const lines = markdown.split('\n');
   
@@ -108,7 +111,9 @@ export function parseMarkdownTable(
   let headerLineIndex = -1;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    if (line.startsWith('|') && line.includes('|')) {
+    // Check if line looks like a table row: contains at least 2 pipes (for at least 1 column separator)
+    const pipeCount = (line.match(/\|/g) || []).length;
+    if (pipeCount >= 2) {
       headerLineIndex = i;
       break;
     }
@@ -311,5 +316,96 @@ export function cloneTableData(table: TableData): TableData {
       ...row,
       cells: row.cells.map(cell => ({ ...cell }))
     }))
+  };
+}
+
+/**
+ * A single column in the grid model used by the table editor.
+ * Unlike TableRow (where the header is rows[0]), the grid model separates
+ * header metadata (GridColumn) from data rows (GridRow).
+ */
+export interface GridColumn {
+  id: string;
+  header: string;
+  alignment: Alignment;
+}
+
+/**
+ * A single data row in the grid model, keyed by GridColumn.id.
+ */
+export interface GridRow {
+  id: string;
+  cells: Record<string, string>;
+}
+
+/**
+ * Grid representation of a table for use with a headless table library.
+ */
+export interface TableGrid {
+  columns: GridColumn[];
+  rows: GridRow[];
+}
+
+/**
+ * Convert a parsed TableData object into the grid model.
+ * The header row becomes columns; data rows become flat keyed records.
+ */
+export function tableDataToGrid(table: TableData): TableGrid {
+  const headerRow = table.rows.find(row => row.isHeader) ?? table.rows[0];
+
+  const columns: GridColumn[] = headerRow.cells.map((cell, index) => ({
+    id: `c${index}`,
+    header: cell.content,
+    alignment: cell.alignment,
+  }));
+
+  const rows: GridRow[] = table.rows
+    .filter(row => !row.isHeader)
+    .map((row, index) => {
+      const cells: Record<string, string> = {};
+      row.cells.forEach((cell, cellIndex) => {
+        cells[`c${cellIndex}`] = cell.content;
+      });
+      return { id: `r${index}`, cells };
+    });
+
+  return { columns, rows };
+}
+
+/**
+ * Convert the grid model back into a TableData object, re-serializing the
+ * markdown via tableToMarkdown so rawContent stays in sync.
+ */
+export function gridToTableData(
+  grid: TableGrid,
+  meta: { startLine: number; endLine: number }
+): TableData {
+  const rows: TableRow[] = [
+    {
+      isHeader: true,
+      cells: grid.columns.map(column => ({
+        content: column.header,
+        alignment: column.alignment,
+      })),
+    },
+    ...grid.rows.map(gridRow => ({
+      isHeader: false,
+      cells: grid.columns.map(column => ({
+        content: gridRow.cells[column.id] ?? '',
+        alignment: null,
+      })),
+    })),
+  ];
+
+  return {
+    rows,
+    startLine: meta.startLine,
+    endLine: meta.endLine,
+    rawContent: tableToMarkdown({
+      rows,
+      startLine: meta.startLine,
+      endLine: meta.endLine,
+      rawContent: '',
+    }),
   };
 }
